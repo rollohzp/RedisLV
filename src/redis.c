@@ -274,7 +274,8 @@ struct redisCommand redisCommandTable[] = {
     {"pfcount",pfcountCommand,-2,"r",0,NULL,1,1,1,0,0},
     {"pfmerge",pfmergeCommand,-2,"wm",0,NULL,1,-1,1,0,0},
     {"pfdebug",pfdebugCommand,-3,"w",0,NULL,0,0,0,0,0},
-    {"latency",latencyCommand,-2,"arslt",0,NULL,0,0,0,0,0}
+    {"latency",latencyCommand,-2,"arslt",0,NULL,0,0,0,0,0},
+    {"backup",backupCommand,2,"ar",0,NULL,0,0,0,0,0}
 };
 
 /*============================ Utility functions ============================ */
@@ -1453,6 +1454,8 @@ void initServerConfig(void) {
     server.assert_line = 0;
     server.bug_report_start = 0;
     server.watchdog_period = 0;
+    server.leveldb_state = REDIS_LEVELDB_OFF;
+    server.leveldb_path = NULL;
 }
 
 /* This function will try to raise the max number of open files accordingly to
@@ -2010,6 +2013,7 @@ void call(redisClient *c, int flags) {
         }
         redisOpArrayFree(&server.also_propagate);
     }
+
     server.stat_numcommands++;
 }
 
@@ -2220,6 +2224,9 @@ int prepareForShutdown(int flags) {
         redisLog(REDIS_NOTICE,"Calling fsync() on the AOF file.");
         aof_fsync(server.aof_fd);
     }
+    if(server.leveldb_state != REDIS_LEVELDB_OFF) {
+      closeleveldb(&server.ldb);
+    }
     if ((server.saveparamslen > 0 && !nosave) || save) {
         redisLog(REDIS_NOTICE,"Saving the final RDB snapshot before exiting.");
         /* Snapshotting. Perform a SYNC SAVE and exit */
@@ -2237,6 +2244,7 @@ int prepareForShutdown(int flags) {
         redisLog(REDIS_NOTICE,"Removing the pid file.");
         unlink(server.pidfile);
     }
+
     /* Close the listening sockets. Apparently this allows faster restarts. */
     closeListeningSockets(1);
     redisLog(REDIS_WARNING,"%s is now ready to exit, bye bye...",
@@ -2866,6 +2874,21 @@ sds genRedisInfoString(char *section) {
             }
         }
     }
+
+    /* leveldb */
+    if (allsections || defsections || !strcasecmp(section,"leveldb")) {
+      if (sections++) info = sdscat(info,"\r\n");
+      info = sdscatprintf(info, "# leveldb\r\n");
+      char *ss = leveldb_property_value(server.ldb.db, "leveldb.stats");
+      info = sdscat(info,ss);
+      leveldb_free(ss);
+      ss = NULL;
+      info = sdscat(info,"\r\n");
+      ss = leveldb_property_value(server.ldb.db, "leveldb.sstables");
+      info = sdscat(info,ss);
+      leveldb_free(ss);
+      ss = NULL;
+    }
     return info;
 }
 
@@ -3241,7 +3264,10 @@ int checkForSentinelMode(int argc, char **argv) {
 /* Function called at startup to load RDB or AOF file in memory. */
 void loadDataFromDisk(void) {
     long long start = ustime();
-    if (server.aof_state == REDIS_AOF_ON) {
+    if (server.leveldb_state == REDIS_LEVELDB_ON) {
+        if (loadleveldb(server.leveldb_path) == REDIS_OK) 
+            redisLog(REDIS_NOTICE,"DB loaded from leveldb: %.3f seconds",(float)(ustime()-start)/1000000);
+    } else if (server.aof_state == REDIS_AOF_ON) {
         if (loadAppendOnlyFile(server.aof_filename) == REDIS_OK)
             redisLog(REDIS_NOTICE,"DB loaded from append only file: %.3f seconds",(float)(ustime()-start)/1000000);
     } else {

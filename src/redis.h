@@ -66,6 +66,8 @@ typedef long long mstime_t; /* millisecond time type. */
 #include "latency.h" /* Latency monitor API */
 #include "sparkline.h" /* ASII graphs API */
 
+#include <leveldb/c.h>
+
 /* Error codes */
 #define REDIS_OK                0
 #define REDIS_ERR               -1
@@ -229,6 +231,10 @@ typedef long long mstime_t; /* millisecond time type. */
 #define REDIS_AOF_OFF 0             /* AOF is off */
 #define REDIS_AOF_ON 1              /* AOF is on */
 #define REDIS_AOF_WAIT_REWRITE 2    /* AOF waits rewrite to start appending */
+
+/* leveldb states */
+#define REDIS_LEVELDB_OFF 0             /* LEVELDB is off */
+#define REDIS_LEVELDB_ON 1              /* LEVELDB is on */
 
 /* Client flags */
 #define REDIS_SLAVE (1<<0)   /* This client is a slave server */
@@ -595,6 +601,13 @@ typedef struct redisOpArray {
     int numops;
 } redisOpArray;
 
+struct leveldb {
+  leveldb_t *db;
+  leveldb_options_t *options;
+  leveldb_readoptions_t *roptions;
+  leveldb_writeoptions_t *woptions;
+};
+
 /*-----------------------------------------------------------------------------
  * Global server state
  *----------------------------------------------------------------------------*/
@@ -836,6 +849,10 @@ struct redisServer {
     int assert_line;
     int bug_report_start; /* True if bug report header was already logged. */
     int watchdog_period;  /* Software watchdog period in ms. 0 = off */
+
+    int leveldb_state;   
+    char *leveldb_path; 
+    struct leveldb ldb;
 };
 
 typedef struct pubsubPattern {
@@ -1111,6 +1128,10 @@ void backgroundRewriteDoneHandler(int exitcode, int bysignal);
 void aofRewriteBufferReset(void);
 unsigned long aofRewriteBufferSize(void);
 
+struct redisClient *createFakeClient(void);
+void freeFakeClientArgv(struct redisClient *c); 
+void freeFakeClient(struct redisClient *c); 
+
 /* Sorted sets data type */
 
 /* Struct to hold a inclusive/exclusive range spec by score comparison. */
@@ -1246,6 +1267,8 @@ void signalFlushedDb(int dbid);
 unsigned int GetKeysInSlot(unsigned int hashslot, robj **keys, unsigned int count);
 void scanGenericCommand(redisClient *c, robj *o, unsigned long cursor);
 int parseScanCursorOrReply(redisClient *c, robj *o, unsigned long *cursor);
+
+void feedAppendZebraList(struct redisCommand *cmd, int dbid, robj **argv, int argc);
 
 /* API to get key arguments from commands */
 #define REDIS_GETKEYS_ALL 0
@@ -1425,6 +1448,22 @@ void pfcountCommand(redisClient *c);
 void pfmergeCommand(redisClient *c);
 void pfdebugCommand(redisClient *c);
 void latencyCommand(redisClient *c);
+void backupCommand(redisClient *c);
+
+void initleveldb(struct leveldb* ldb, char *path);
+int loadleveldb(char *path);
+void closeleveldb(struct leveldb *ldb);
+
+void leveldbHset(struct leveldb *ldb, robj *argv1, robj *argv2, robj *argv3);
+void leveldbHmset(struct leveldb *ldb, robj** argv, int argc);
+void leveldbHdel(struct leveldb *ldb, robj** argv, int argc);
+void leveldbHclear(struct leveldb *ldb, robj* argv);
+void leveldbSadd(struct leveldb *ldb, robj** argv, int argc);
+void leveldbSrem(struct leveldb *ldb, robj** argv, int argc);
+void leveldbSclear(struct leveldb *ldb, robj* argv);
+void leveldbZadd(struct leveldb *ldb, sds mkey, sds field, double score);
+void leveldbZrem(struct leveldb *ldb, robj** argv, int argc);
+void leveldbZclear(struct leveldb *ldb, robj* argv);
 
 #if defined(__GNUC__)
 void *calloc(size_t count, size_t size) __attribute__ ((deprecated));

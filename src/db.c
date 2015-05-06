@@ -273,8 +273,25 @@ void flushallCommand(redisClient *c) {
 
 void delCommand(redisClient *c) {
     int deleted = 0, j;
+    robj *o;
 
     for (j = 1; j < c->argc; j++) {
+
+        o = lookupKeyRead(c->db,c->argv[j]);
+        if (o != NULL) {
+          switch(o->type) {
+            case REDIS_SET: 
+              leveldbSclear(&server.ldb, c->argv[j]);
+              break;
+            case REDIS_ZSET: 
+              leveldbZclear(&server.ldb, c->argv[j]);
+              break;
+            case REDIS_HASH: 
+              leveldbHclear(&server.ldb, c->argv[j]);
+              break;
+          }
+        }
+
         expireIfNeeded(c->db,c->argv[j]);
         if (dbDelete(c->db,c->argv[j])) {
             signalModifiedKey(c->db,c->argv[j]);

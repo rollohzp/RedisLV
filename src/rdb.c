@@ -1087,7 +1087,7 @@ void startLoading(FILE *fp) {
     /* Load the DB */
     server.loading = 1;
     server.loading_start_time = time(NULL);
-    if (fstat(fileno(fp), &sb) == -1) {
+    if (fp == NULL || fstat(fileno(fp), &sb) == -1) {
         server.loading_total_bytes = 1; /* just to avoid division by zero */
     } else {
         server.loading_total_bytes = sb.st_size;

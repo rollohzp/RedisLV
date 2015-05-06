@@ -262,6 +262,8 @@ void saddCommand(redisClient *c) {
         }
     }
 
+    leveldbSadd(&server.ldb, c->argv, c->argc);
+
     for (j = 2; j < c->argc; j++) {
         c->argv[j] = tryObjectEncoding(c->argv[j]);
         if (setTypeAdd(set,c->argv[j])) added++;
@@ -280,6 +282,8 @@ void sremCommand(redisClient *c) {
 
     if ((set = lookupKeyWriteOrReply(c,c->argv[1],shared.czero)) == NULL ||
         checkType(c,set,REDIS_SET)) return;
+
+    leveldbSrem(&server.ldb, c->argv, c->argc);
 
     for (j = 2; j < c->argc; j++) {
         if (setTypeRemove(set,c->argv[j])) {

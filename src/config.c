@@ -334,6 +334,16 @@ void loadServerConfigFromString(char *config) {
             }
             zfree(server.aof_filename);
             server.aof_filename = zstrdup(argv[1]);
+        } else if (!strcasecmp(argv[0],"leveldb") && argc == 2) {
+            int yes;
+
+            if ((yes = yesnotoi(argv[1])) == -1) {
+                err = "argument must be 'yes' or 'no'"; goto loaderr;
+            }
+            server.leveldb_state = yes ? REDIS_LEVELDB_ON : REDIS_LEVELDB_OFF;
+        } else if (!strcasecmp(argv[0],"leveldb-path") && argc == 2) {
+            zfree(server.leveldb_path);
+            server.leveldb_path = zstrdup(argv[1]);
         } else if (!strcasecmp(argv[0],"no-appendfsync-on-rewrite")
                    && argc == 2) {
             if ((server.aof_no_fsync_on_rewrite= yesnotoi(argv[1])) == -1) {
@@ -955,6 +965,7 @@ void configGetCommand(redisClient *c) {
     config_get_string_field("unixsocket",server.unixsocket);
     config_get_string_field("logfile",server.logfile);
     config_get_string_field("pidfile",server.pidfile);
+    config_get_string_field("leveldb-path",server.leveldb_path);
 
     /* Numerical values */
     config_get_numerical_field("maxmemory",server.maxmemory);
@@ -1030,6 +1041,11 @@ void configGetCommand(redisClient *c) {
     if (stringmatch(pattern,"appendonly",0)) {
         addReplyBulkCString(c,"appendonly");
         addReplyBulkCString(c,server.aof_state == REDIS_AOF_OFF ? "no" : "yes");
+        matches++;
+    }
+    if (stringmatch(pattern,"leveldb",0)) {
+        addReplyBulkCString(c,"leveldb");
+        addReplyBulkCString(c,server.leveldb_state == REDIS_LEVELDB_OFF ? "no" : "yes");
         matches++;
     }
     if (stringmatch(pattern,"dir",0)) {

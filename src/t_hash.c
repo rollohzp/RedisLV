@@ -469,6 +469,9 @@ void hsetCommand(redisClient *c) {
     robj *o;
 
     if ((o = hashTypeLookupWriteOrCreate(c,c->argv[1])) == NULL) return;
+
+    leveldbHset(&server.ldb, c->argv[1], c->argv[2], c->argv[3]);
+
     hashTypeTryConversion(o,c->argv,2,3);
     hashTypeTryObjectEncoding(o,&c->argv[2], &c->argv[3]);
     update = hashTypeSet(o,c->argv[2],c->argv[3]);
@@ -505,6 +508,9 @@ void hmsetCommand(redisClient *c) {
     }
 
     if ((o = hashTypeLookupWriteOrCreate(c,c->argv[1])) == NULL) return;
+
+    leveldbHmset(&server.ldb, c->argv, c->argc);
+
     hashTypeTryConversion(o,c->argv,2,c->argc-1);
     for (i = 2; i < c->argc; i += 2) {
         hashTypeTryObjectEncoding(o,&c->argv[i], &c->argv[i+1]);
@@ -541,6 +547,9 @@ void hincrbyCommand(redisClient *c) {
     }
     value += incr;
     new = createStringObjectFromLongLong(value);
+
+    leveldbHset(&server.ldb, c->argv[1], c->argv[2], new);
+
     hashTypeTryObjectEncoding(o,&c->argv[2],NULL);
     hashTypeSet(o,c->argv[2],new);
     decrRefCount(new);
@@ -569,6 +578,9 @@ void hincrbyfloatCommand(redisClient *c) {
 
     value += incr;
     new = createStringObjectFromLongDouble(value,1);
+
+    leveldbHset(&server.ldb, c->argv[1], c->argv[2], new);
+
     hashTypeTryObjectEncoding(o,&c->argv[2],NULL);
     hashTypeSet(o,c->argv[2],new);
     addReplyBulk(c,new);
@@ -655,6 +667,8 @@ void hmgetCommand(redisClient *c) {
 void hdelCommand(redisClient *c) {
     robj *o;
     int j, deleted = 0, keyremoved = 0;
+
+    leveldbHdel(&server.ldb, c->argv, c->argc);
 
     if ((o = lookupKeyWriteOrReply(c,c->argv[1],shared.czero)) == NULL ||
         checkType(c,o,REDIS_HASH)) return;
