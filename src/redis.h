@@ -1454,14 +1454,16 @@ void initleveldb(struct leveldb* ldb, char *path);
 int loadleveldb(char *path);
 void closeleveldb(struct leveldb *ldb);
 
-void leveldbHset(struct leveldb *ldb, robj *argv1, robj *argv2, robj *argv3);
+void leveldbHset(struct leveldb *ldb, robj** argv);
+void leveldbHsetDirect(struct leveldb *ldb, robj *argv1, robj *argv2, robj *argv3);
 void leveldbHmset(struct leveldb *ldb, robj** argv, int argc);
 void leveldbHdel(struct leveldb *ldb, robj** argv, int argc);
 void leveldbHclear(struct leveldb *ldb, robj* argv);
 void leveldbSadd(struct leveldb *ldb, robj** argv, int argc);
 void leveldbSrem(struct leveldb *ldb, robj** argv, int argc);
 void leveldbSclear(struct leveldb *ldb, robj* argv);
-void leveldbZadd(struct leveldb *ldb, sds mkey, sds field, double score);
+void leveldbZaddDirect(struct leveldb *ldb, robj *argv1, robj *argv2, double score);
+void leveldbZadd(struct leveldb *ldb, robj** argv, int argc);
 void leveldbZrem(struct leveldb *ldb, robj** argv, int argc);
 void leveldbZclear(struct leveldb *ldb, robj* argv);
 

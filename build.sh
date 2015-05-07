@@ -16,7 +16,10 @@ export CPLUS_INCLUDE_PATH=${SNAPPY_PATH}
 
 cd ../
 
-tar -zxf ${LEVELDB}.tar.gz && cd ${LEVELDB} &&  make || exit 1
+tar -zxf ${LEVELDB}.tar.gz 
+
+cd ${LEVELDB} &&  make || exit 1
+
 LEVELDB_PATH=`pwd`
 
 cd ../../

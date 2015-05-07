@@ -1232,14 +1232,12 @@ void zaddGenericCommand(redisClient *c, int incr) {
 
                 /* Remove and re-insert when score changed. */
                 if (score != curscore) {
-                    leveldbZadd(&server.ldb, key->ptr, ele->ptr, score);
                     zobj->ptr = zzlDelete(zobj->ptr,eptr);
                     zobj->ptr = zzlInsert(zobj->ptr,ele,score);
                     server.dirty++;
                     updated++;
                 }
             } else {
-                leveldbZadd(&server.ldb, key->ptr, ele->ptr, score);
                 /* Optimize: check if the element is too large or the list
                  * becomes too long *before* executing zzlInsert. */
                 zobj->ptr = zzlInsert(zobj->ptr,ele,score);
@@ -1255,8 +1253,6 @@ void zaddGenericCommand(redisClient *c, int incr) {
             zskiplistNode *znode;
             dictEntry *de;
 
-            sds tmp = sdsdup(c->argv[3+j*2]->ptr);
-
             ele = c->argv[3+j*2] = tryObjectEncoding(c->argv[3+j*2]);
             de = dictFind(zs->dict,ele);
             if (de != NULL) {
@@ -1267,7 +1263,6 @@ void zaddGenericCommand(redisClient *c, int incr) {
                     score += curscore;
                     if (isnan(score)) {
                         addReplyError(c,nanerr);
-                        sdsfree(tmp);
                         /* Don't need to check if the sorted set is empty
                          * because we know it has at least one element. */
                         goto cleanup;
@@ -1278,7 +1273,6 @@ void zaddGenericCommand(redisClient *c, int incr) {
                  * delete the key object from the skiplist, since the
                  * dictionary still has a reference to it. */
                 if (score != curscore) {
-                    leveldbZadd(&server.ldb, key->ptr, tmp, score);
                     redisAssertWithInfo(c,curobj,zslDelete(zs->zsl,curscore,curobj));
                     znode = zslInsert(zs->zsl,score,curobj);
                     incrRefCount(curobj); /* Re-inserted in skiplist. */
@@ -1287,7 +1281,6 @@ void zaddGenericCommand(redisClient *c, int incr) {
                     updated++;
                 }
             } else {
-                leveldbZadd(&server.ldb, key->ptr, tmp, score);
                 znode = zslInsert(zs->zsl,score,ele);
                 incrRefCount(ele); /* Inserted in skiplist. */
                 redisAssertWithInfo(c,NULL,dictAdd(zs->dict,ele,&znode->score) == DICT_OK);
@@ -1295,15 +1288,17 @@ void zaddGenericCommand(redisClient *c, int incr) {
                 server.dirty++;
                 added++;
             }
-            sdsfree(tmp);
         } else {
             redisPanic("Unknown sorted set encoding");
         }
     }
-    if (incr) /* ZINCRBY */
+    if (incr) /* ZINCRBY */ {
         addReplyDouble(c,score);
-    else /* ZADD */
+        leveldbZaddDirect(&server.ldb, c->argv[1], c->argv[3], score);
+    }else /* ZADD */ {
         addReplyLongLong(c,added);
+        leveldbZadd(&server.ldb, c->argv, c->argc);
+    }
 
 cleanup:
     zfree(scores);
@@ -1329,8 +1324,6 @@ void zremCommand(redisClient *c) {
 
     if ((zobj = lookupKeyWriteOrReply(c,key,shared.czero)) == NULL ||
         checkType(c,zobj,REDIS_ZSET)) return;
-
-    leveldbZrem(&server.ldb, c->argv, c->argc);
 
     if (zobj->encoding == REDIS_ENCODING_ZIPLIST) {
         unsigned char *eptr;
@@ -1382,6 +1375,7 @@ void zremCommand(redisClient *c) {
         server.dirty += deleted;
     }
     addReplyLongLong(c,deleted);
+    leveldbZrem(&server.ldb, c->argv, c->argc);
 }
 
 /* Implements ZREMRANGEBYRANK, ZREMRANGEBYSCORE, ZREMRANGEBYLEX commands. */

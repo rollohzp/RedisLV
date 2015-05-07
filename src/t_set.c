@@ -261,9 +261,6 @@ void saddCommand(redisClient *c) {
             return;
         }
     }
-
-    leveldbSadd(&server.ldb, c->argv, c->argc);
-
     for (j = 2; j < c->argc; j++) {
         c->argv[j] = tryObjectEncoding(c->argv[j]);
         if (setTypeAdd(set,c->argv[j])) added++;
@@ -274,6 +271,7 @@ void saddCommand(redisClient *c) {
     }
     server.dirty += added;
     addReplyLongLong(c,added);
+    leveldbSadd(&server.ldb, c->argv, c->argc);
 }
 
 void sremCommand(redisClient *c) {
@@ -282,9 +280,6 @@ void sremCommand(redisClient *c) {
 
     if ((set = lookupKeyWriteOrReply(c,c->argv[1],shared.czero)) == NULL ||
         checkType(c,set,REDIS_SET)) return;
-
-    leveldbSrem(&server.ldb, c->argv, c->argc);
-
     for (j = 2; j < c->argc; j++) {
         if (setTypeRemove(set,c->argv[j])) {
             deleted++;
@@ -304,6 +299,7 @@ void sremCommand(redisClient *c) {
         server.dirty += deleted;
     }
     addReplyLongLong(c,deleted);
+    leveldbSrem(&server.ldb, c->argv, c->argc);
 }
 
 void smoveCommand(redisClient *c) {

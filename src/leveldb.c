@@ -93,6 +93,14 @@ int loadleveldb(char *path) {
   stopLoading();
   server.leveldb_state = old_leveldb_state;
 
+  char *err = NULL;
+  leveldb_iter_get_error(iterator, &err);
+  if(err != NULL) {
+    redisLog(REDIS_WARNING, "load leveldb iterator err: %s", err);
+    leveldb_free(err);
+    err = NULL;
+  }
+
   leveldb_iter_destroy(iterator);
 
   return REDIS_OK;
@@ -117,6 +125,8 @@ void initleveldb(struct leveldb* ldb, char *path) {
   }
 
   ldb->roptions = leveldb_readoptions_create();
+  leveldb_readoptions_set_fill_cache(ldb->roptions, 0);
+
   ldb->woptions = leveldb_writeoptions_create();
   leveldb_writeoptions_set_sync(ldb->woptions, 0);
 }
@@ -130,10 +140,10 @@ void closeleveldb(struct leveldb *ldb) {
 
 sds createleveldbHashHead(sds name) {
   char tmp[2];
+  sds key = sdsnewlen("h",1);
+
   tmp[0] = sdslen(name);
   tmp[1] = '\0';
-
-  sds key = sdsnewlen("h",1);
   key = sdscat(key, tmp);
   key = sdscatsds(key, name);
   tmp[0] = '=';
@@ -141,100 +151,129 @@ sds createleveldbHashHead(sds name) {
   return key;
 }
 
-void leveldbHset(struct leveldb *ldb, robj *argv1, robj *argv2, robj *argv3) {
+void leveldbHset(struct leveldb *ldb, robj** argv) {
+  leveldbHsetDirect(ldb, argv[1], argv[2], argv[3]);
+}
+
+void leveldbHsetDirect(struct leveldb *ldb, robj *argv1, robj *argv2, robj *argv3) {
   if(server.leveldb_state == REDIS_LEVELDB_OFF) {
     return;
   }
-  sds key = createleveldbHashHead(argv1->ptr);
-  key = sdscatsds(key, argv2->ptr);
-  size_t klen = sdslen(key);
 
+  robj *r1 = getDecodedObject(argv1);
+  robj *r2 = getDecodedObject(argv2);
+  robj *r3 = getDecodedObject(argv3);
+  sds key = createleveldbHashHead(r1->ptr);
   char *err = NULL;
-  
-  leveldb_put(ldb->db, ldb->woptions, key, klen, argv3->ptr, sdslen(argv3->ptr), &err);
 
+  key = sdscatsds(key, r2->ptr);
+  leveldb_put(ldb->db, ldb->woptions, key, sdslen(key), r3->ptr, sdslen(r3->ptr), &err);
   if (err != NULL) {
-    redisLog(REDIS_WARNING, "hset leveldb err: %s", err);
+    redisLog(REDIS_WARNING, "hset direct leveldb err: %s", err);
     leveldb_free(err); 
+    err = NULL;
   }
 
   sdsfree(key);
+  decrRefCount(r1);
+  decrRefCount(r2);
+  decrRefCount(r3);
 }
 
 void leveldbHmset(struct leveldb *ldb, robj** argv, int argc) {
   if(server.leveldb_state == REDIS_LEVELDB_OFF) {
     return;
   }
-  sds key = createleveldbHashHead(argv[1]->ptr);
-  size_t klen = sdslen(key);
 
+  robj *r1 = getDecodedObject(argv[1]);
+  sds key = createleveldbHashHead(r1->ptr);
   leveldb_writebatch_t* wb = leveldb_writebatch_create();
-  int i;
-  for (i = 2; i < argc; i += 2) {
-    key = sdscatsds(key, argv[i]->ptr);
-    leveldb_writebatch_put(wb, key, sdslen(key), argv[i+1]->ptr, sdslen(argv[i+1]->ptr));
-    sdsrange(key, 0, klen - 1);
-  }
-
+  robj **rs = zmalloc(sizeof(robj*)*(argc - 2));
+  size_t klen = sdslen(key);
+  int i, j = 0;
   char *err = NULL;
+
+  for (i = 2; i < argc; i += 2) {
+    rs[j] = getDecodedObject(argv[i]);
+    rs[j+1] = getDecodedObject(argv[i+1]);
+    key = sdscatsds(key, rs[j]->ptr);
+    leveldb_writebatch_put(wb, key, sdslen(key), rs[j+1]->ptr, sdslen(rs[j+1]->ptr));
+    sdsrange(key, 0, klen - 1);
+    j += 2;
+  }
   leveldb_write(ldb->db, ldb->woptions, wb, &err);
   if (err != NULL) {
     redisLog(REDIS_WARNING, "hmset leveldb err: %s", err);
     leveldb_free(err); 
+    err = NULL;
   }
 
-  leveldb_writebatch_destroy(wb);
-
   sdsfree(key);
+  decrRefCount(r1);
+  leveldb_writebatch_destroy(wb);
+  for(j = 0; j < argc - 2; j++) {
+    decrRefCount(rs[j]);
+  }
+  zfree(rs);
 }
 
 void leveldbHdel(struct leveldb *ldb, robj** argv, int argc) {
   if(server.leveldb_state == REDIS_LEVELDB_OFF) {
     return;
   }
-  sds key = createleveldbHashHead(argv[1]->ptr);
-  size_t klen = sdslen(key);
 
+  robj *r1 = getDecodedObject(argv[1]);
+  sds key = createleveldbHashHead(r1->ptr);
   leveldb_writebatch_t* wb = leveldb_writebatch_create();
-  int i;
-  for (i = 2; i < argc; i++ ) {
-    key = sdscatsds(key, argv[i]->ptr);
+  robj **rs = zmalloc(sizeof(robj*)*(argc - 2));
+  size_t klen = sdslen(key);
+  int i, j = 0;
+  char *err = NULL;
+
+  for (i = 2; i < argc; i++) {
+    rs[j] = getDecodedObject(argv[i]);
+    key = sdscatsds(key, rs[j]->ptr);
     leveldb_writebatch_delete(wb, key, sdslen(key));
     sdsrange(key, 0, klen - 1);
+    j++;
   }
-
-  char *err = NULL;
   leveldb_write(ldb->db, ldb->woptions, wb, &err);
   if (err != NULL) {
     redisLog(REDIS_WARNING, "hdel leveldb err: %s", err);
     leveldb_free(err); 
+    err = NULL;
   }
 
-  leveldb_writebatch_destroy(wb);
-
   sdsfree(key);
+  decrRefCount(r1);
+  leveldb_writebatch_destroy(wb);
+  for(j = 0; j < argc - 2; j++) {
+    decrRefCount(rs[j]);
+  }
+  zfree(rs);
 }
 
-void leveldbHclear(struct leveldb *ldb, robj* argv) {
+void leveldbHclear(struct leveldb *ldb, robj *argv) {
   if(server.leveldb_state == REDIS_LEVELDB_OFF) {
     return;
   }
+
+  robj *r1 = getDecodedObject(argv);
+  sds key = createleveldbHashHead(r1->ptr);
+  leveldb_iterator_t *iterator = leveldb_create_iterator(ldb->db, ldb->roptions);
   char *data = NULL;
   size_t dataLen = 0;
-  size_t keyLen = sdslen(argv->ptr);
+  size_t keyLen = sdslen(r1->ptr);
   int cmp;
-
-  sds key = createleveldbHashHead(argv->ptr);
   size_t klen = sdslen(key);
-  leveldb_iterator_t *iterator = leveldb_create_iterator(ldb->db, ldb->roptions);
+  char *err = NULL;
 
   for(leveldb_iter_seek(iterator, key, klen); leveldb_iter_valid(iterator); leveldb_iter_next(iterator)) {
     data = (char*) leveldb_iter_key(iterator, &dataLen);
     size_t len = data[1];
     if(len != keyLen) break;
-    cmp = memcmp(argv->ptr, data + 2, len);
+    cmp = memcmp(r1->ptr, data + 2, len);
     if(cmp != 0) break;
-    char *err = NULL;
     leveldb_delete(ldb->db, ldb->woptions, data, dataLen, &err);
     if (err != NULL) {
       redisLog(REDIS_WARNING, "hclear leveldb err: %s", err);
@@ -242,16 +281,24 @@ void leveldbHclear(struct leveldb *ldb, robj* argv) {
       err = NULL;
     }
   }
-  leveldb_iter_destroy(iterator);
+
   sdsfree(key);
+  decrRefCount(r1);
+  leveldb_iter_get_error(iterator, &err);
+  if(err != NULL) {
+    redisLog(REDIS_WARNING, "hclear leveldb iterator err: %s", err);
+    leveldb_free(err);
+    err = NULL;
+  }
+  leveldb_iter_destroy(iterator);
 }
 
 sds createleveldbSetHead(sds name) {
   char tmp[2];
+  sds key = sdsnewlen("s",1);
+
   tmp[0] = sdslen(name);
   tmp[1] = '\0';
-
-  sds key = sdsnewlen("s",1);
   key = sdscat(key, tmp);
   key = sdscatsds(key, name);
   tmp[0] = '=';
@@ -263,94 +310,120 @@ void leveldbSadd(struct leveldb *ldb, robj** argv, int argc) {
   if(server.leveldb_state == REDIS_LEVELDB_OFF) {
     return;
   }
-  sds key = createleveldbSetHead(argv[1]->ptr);
-  size_t klen = sdslen(key);
 
+  robj *r1 = getDecodedObject(argv[1]);
+  sds key = createleveldbSetHead(r1->ptr);
   leveldb_writebatch_t* wb = leveldb_writebatch_create();
-  int i;
+  robj **rs = zmalloc(sizeof(robj*)*(argc - 2));
+  size_t klen = sdslen(key);
+  int i, j = 0;
+  char *err = NULL;
+
   for (i = 2; i < argc; i++) {
-    key = sdscatsds(key, argv[i]->ptr);
+    rs[j] = getDecodedObject(argv[i]);
+    key = sdscatsds(key, rs[j]->ptr);
     leveldb_writebatch_put(wb, key, sdslen(key), NULL, 0);
     sdsrange(key, 0, klen - 1);
+    j++;
   }
-
-  char *err = NULL;
   leveldb_write(ldb->db, ldb->woptions, wb, &err);
   if (err != NULL) {
     redisLog(REDIS_WARNING, "sadd leveldb err: %s", err);
     leveldb_free(err); 
+    err = NULL;
   }
 
-  leveldb_writebatch_destroy(wb);
-
   sdsfree(key);
+  decrRefCount(r1);
+  leveldb_writebatch_destroy(wb);
+  for(j = 0; j < argc - 2; j++) {
+    decrRefCount(rs[j]);
+  }
+  zfree(rs);
 }
 
 void leveldbSrem(struct leveldb *ldb, robj** argv, int argc) {
   if(server.leveldb_state == REDIS_LEVELDB_OFF) {
     return;
   }
-  sds key = createleveldbSetHead(argv[1]->ptr);
-  size_t hlen = sdslen(key);
 
+  robj *r1 = getDecodedObject(argv[1]);
+  sds key = createleveldbSetHead(r1->ptr);
   leveldb_writebatch_t* wb = leveldb_writebatch_create();
-  int i;
-  for (i = 2; i < argc; i++ ) {
-    key = sdscatsds(key, argv[i]->ptr);
-    leveldb_writebatch_delete(wb, key, sdslen(key));
-    sdsrange(key, 0, hlen - 1);
-  }
-
+  robj **rs = zmalloc(sizeof(robj*)*(argc - 2));
+  size_t klen = sdslen(key);
+  int i, j = 0;
   char *err = NULL;
+
+  for (i = 2; i < argc; i++ ) {
+    rs[j] = getDecodedObject(argv[i]);
+    key = sdscatsds(key, rs[j]->ptr);
+    leveldb_writebatch_delete(wb, key, sdslen(key));
+    sdsrange(key, 0, klen - 1);
+    j++;
+  }
   leveldb_write(ldb->db, ldb->woptions, wb, &err);
   if (err != NULL) {
     redisLog(REDIS_WARNING, "srem leveldb err: %s", err);
     leveldb_free(err); 
+    err = NULL;
   }
 
-  leveldb_writebatch_destroy(wb);
-
   sdsfree(key);
+  decrRefCount(r1);
+  leveldb_writebatch_destroy(wb);
+  for(j = 0; j < argc - 2; j++) {
+    decrRefCount(rs[j]);
+  }
+  zfree(rs);
 }
 
 void leveldbSclear(struct leveldb *ldb, robj* argv) {
   if(server.leveldb_state == REDIS_LEVELDB_OFF) {
     return;
   }
+
+  robj *r1 = getDecodedObject(argv);
+  sds key = createleveldbSetHead(r1->ptr);
+  leveldb_iterator_t *iterator = leveldb_create_iterator(ldb->db, ldb->roptions);
   char *data = NULL;
   size_t dataLen = 0;
-  size_t keyLen = sdslen(argv->ptr);
+  size_t keyLen = sdslen(r1->ptr);
   int cmp;
-
-  sds key = createleveldbSetHead(argv->ptr);
   size_t klen = sdslen(key);
-
-  leveldb_iterator_t *iterator = leveldb_create_iterator(ldb->db, ldb->roptions);
+  char *err = NULL;
 
   for(leveldb_iter_seek(iterator, key, klen); leveldb_iter_valid(iterator); leveldb_iter_next(iterator)) {
     data = (char*) leveldb_iter_key(iterator, &dataLen);
     size_t len = data[1];
     if(len != keyLen) break;
-    cmp = memcmp(argv->ptr, data + 2, len);
+    cmp = memcmp(r1->ptr, data + 2, len);
     if(cmp != 0) break;
-    char *err = NULL;
     leveldb_delete(ldb->db, ldb->woptions, data, dataLen, &err);
     if (err != NULL) {
-      redisLog(REDIS_WARNING, "hclear leveldb err: %s", err);
+      redisLog(REDIS_WARNING, "sclear leveldb err: %s", err);
       leveldb_free(err); 
       err = NULL;
     }
   }
-  leveldb_iter_destroy(iterator);
+
   sdsfree(key);
+  decrRefCount(r1);
+  leveldb_iter_get_error(iterator, &err);
+  if(err != NULL) {
+    redisLog(REDIS_WARNING, "sclear leveldb iterator err: %s", err);
+    leveldb_free(err);
+    err = NULL;
+  }
+  leveldb_iter_destroy(iterator);
 }
 
 sds createleveldbSortedSetHead(sds name) {
   char tmp[2];
+  sds key = sdsnewlen("z",1);
+
   tmp[0] = sdslen(name);
   tmp[1] = '\0';
-
-  sds key = sdsnewlen("z",1);
   key = sdscat(key, tmp);
   key = sdscatsds(key, name);
   tmp[0] = '=';
@@ -358,77 +431,126 @@ sds createleveldbSortedSetHead(sds name) {
   return key;
 }
 
-void leveldbZadd(struct leveldb *ldb, sds mkey, sds field, double score) {
+void leveldbZadd(struct leveldb *ldb, robj** argv, int argc) {
   if(server.leveldb_state == REDIS_LEVELDB_OFF) {
     return;
   }
-  sds key = createleveldbSortedSetHead(mkey);
-  key = sdscatsds(key, field);
-  size_t klen = sdslen(key);
 
+  robj *r1 = getDecodedObject(argv[1]);
+  sds key = createleveldbSortedSetHead(r1->ptr);
+  leveldb_writebatch_t* wb = leveldb_writebatch_create();
+  robj **rs = zmalloc(sizeof(robj*)*(argc - 2));
+  size_t klen = sdslen(key);
+  int i, j = 0;
   char *err = NULL;
 
-  char buf[128];
-  int len = snprintf(buf,sizeof(buf),"%.17g",score);
-  
-  leveldb_put(ldb->db, ldb->woptions, key, klen, buf, len, &err);
-
+  for (i = 2; i < argc; i += 2) {
+    rs[j] = getDecodedObject(argv[i]);
+    rs[j+1] = getDecodedObject(argv[i+1]);
+    key = sdscatsds(key, rs[j+1]->ptr);
+    leveldb_writebatch_put(wb, key, sdslen(key), rs[j]->ptr, sdslen(rs[j]->ptr));
+    sdsrange(key, 0, klen - 1);
+    j += 2;
+  }
+  leveldb_write(ldb->db, ldb->woptions, wb, &err);
   if (err != NULL) {
-    redisLog(REDIS_WARNING, "hset leveldb err: %s", err);
+    redisLog(REDIS_WARNING, "zadd leveldb err: %s", err);
     leveldb_free(err); 
+    err = NULL;
   }
 
   sdsfree(key);
+  decrRefCount(r1);
+  leveldb_writebatch_destroy(wb);
+  for(j = 0; j < argc - 2; j++) {
+    decrRefCount(rs[j]);
+  }
+  zfree(rs);
+}
+
+void leveldbZaddDirect(struct leveldb *ldb, robj* argv1, robj* argv2, double score) {
+  if(server.leveldb_state == REDIS_LEVELDB_OFF) {
+    return;
+  }
+
+  robj *r1 = getDecodedObject(argv1);
+  robj *r2 = getDecodedObject(argv2);
+  sds key = createleveldbSortedSetHead(r1->ptr);
+  key = sdscatsds(key, r2->ptr);
+  size_t klen = sdslen(key);
+  char *err = NULL;
+  char buf[128];
+  int len = snprintf(buf,sizeof(buf),"%.17g",score);
+
+  leveldb_put(ldb->db, ldb->woptions, key, klen, buf, len, &err);
+  if (err != NULL) {
+    redisLog(REDIS_WARNING, "zadd direct leveldb err: %s", err);
+    leveldb_free(err); 
+    err = NULL;
+  }
+
+  sdsfree(key);
+  decrRefCount(r1);
+  decrRefCount(r2);
 }
 
 void leveldbZrem(struct leveldb *ldb, robj** argv, int argc) {
   if(server.leveldb_state == REDIS_LEVELDB_OFF) {
     return;
   }
-  sds key = createleveldbSortedSetHead(argv[1]->ptr);
-  size_t hlen = sdslen(key);
 
+  robj *r1 = getDecodedObject(argv[1]);
+  sds key = createleveldbSortedSetHead(r1->ptr);
   leveldb_writebatch_t* wb = leveldb_writebatch_create();
-  int i;
-  for (i = 2; i < argc; i++ ) {
-    key = sdscatsds(key, argv[i]->ptr);
-    leveldb_writebatch_delete(wb, key, sdslen(key));
-    sdsrange(key, 0, hlen - 1);
-  }
-
+  robj **rs = zmalloc(sizeof(robj*)*(argc - 2));
+  size_t klen = sdslen(key);
+  int i, j = 0;
   char *err = NULL;
+
+  for (i = 2; i < argc; i++ ) {
+    rs[j] = getDecodedObject(argv[i]);
+    key = sdscatsds(key, rs[j]->ptr);
+    leveldb_writebatch_delete(wb, key, sdslen(key));
+    sdsrange(key, 0, klen - 1);
+    j++;
+  }
   leveldb_write(ldb->db, ldb->woptions, wb, &err);
   if (err != NULL) {
     redisLog(REDIS_WARNING, "zrem leveldb err: %s", err);
     leveldb_free(err); 
+    err = NULL;
   }
 
-  leveldb_writebatch_destroy(wb);
-
   sdsfree(key);
+  decrRefCount(r1);
+  leveldb_writebatch_destroy(wb);
+  for(j = 0; j < argc - 2; j++) {
+    decrRefCount(rs[j]);
+  }
+  zfree(rs);
 }
 
 void leveldbZclear(struct leveldb *ldb, robj* argv) {
   if(server.leveldb_state == REDIS_LEVELDB_OFF) {
     return;
   }
+
+  robj *r1 = getDecodedObject(argv);
+  sds key = createleveldbSortedSetHead(r1->ptr);
   char *data = NULL;
   size_t dataLen = 0;
-  size_t keyLen = sdslen(argv->ptr);
+  size_t keyLen = sdslen(r1->ptr);
   int cmp;
-
-  sds key = createleveldbSortedSetHead(argv->ptr);
   size_t klen = sdslen(key);
+  char *err = NULL;
 
   leveldb_iterator_t *iterator = leveldb_create_iterator(ldb->db, ldb->roptions);
-
   for(leveldb_iter_seek(iterator, key, klen); leveldb_iter_valid(iterator); leveldb_iter_next(iterator)) {
     data = (char*) leveldb_iter_key(iterator, &dataLen);
     size_t len = data[1];
     if(len != keyLen) break;
-    cmp = memcmp(argv->ptr, data + 2, len);
+    cmp = memcmp(r1->ptr, data + 2, len);
     if(cmp != 0) break;
-    char *err = NULL;
     leveldb_delete(ldb->db, ldb->woptions, data, dataLen, &err);
     if (err != NULL) {
       redisLog(REDIS_WARNING, "zclear leveldb err: %s", err);
@@ -436,20 +558,29 @@ void leveldbZclear(struct leveldb *ldb, robj* argv) {
       err = NULL;
     }
   }
-  leveldb_iter_destroy(iterator);
+
   sdsfree(key);
+  decrRefCount(r1);
+  leveldb_iter_get_error(iterator, &err);
+  if(err != NULL) {
+    redisLog(REDIS_WARNING, "zclear leveldb iterator err: %s", err);
+    leveldb_free(err);
+    err = NULL;
+  }
+  leveldb_iter_destroy(iterator);
 }
 
 void *leveldbBackup(void *arg) {
   char *path = (char *)arg;
   leveldb_options_t *options = leveldb_options_create();
+
   leveldb_options_set_create_if_missing(options, 1);
   leveldb_options_set_error_if_exists(options, 1);
   leveldb_options_set_compression(options, 1);
   leveldb_options_set_write_buffer_size(options, 64 * 1024 * 1024);
 
-  char *err = NULL;
   leveldb_t *db = leveldb_open(options, path, &err);
+  char *err = NULL;
 
   if (err != NULL) {
     redisLog(REDIS_WARNING, "open leveldb err: %s", err);
@@ -459,16 +590,17 @@ void *leveldbBackup(void *arg) {
   }
 
   leveldb_writeoptions_t *woptions = leveldb_writeoptions_create();
+
   leveldb_writeoptions_set_sync(woptions, 0);
 
   char *data = NULL;
   size_t dataLen = 0;
   char *value = NULL;
   size_t valueLen = 0;
-
   int i = 0;
   leveldb_writebatch_t* wb = leveldb_writebatch_create();
   leveldb_iterator_t *iterator = leveldb_create_iterator(server.ldb.db, server.ldb.roptions);
+
   for(leveldb_iter_seek_to_first(iterator); leveldb_iter_valid(iterator); leveldb_iter_next(iterator)) {
     data = (char*) leveldb_iter_key(iterator, &dataLen);
     value = (char*) leveldb_iter_value(iterator, &valueLen);
@@ -491,12 +623,18 @@ void *leveldbBackup(void *arg) {
     redisLog(REDIS_WARNING, "backup write leveldb err: %s", err);
     leveldb_free(err); 
   }
+
   leveldb_writebatch_destroy(wb);
+  leveldb_iter_get_error(iterator, &err);
+  if(err != NULL) {
+    redisLog(REDIS_WARNING, "backup leveldb iterator err: %s", err);
+    leveldb_free(err);
+    err = NULL;
+  }
   leveldb_iter_destroy(iterator);
   leveldb_writeoptions_destroy(woptions);
   leveldb_close(db);
   redisLog(REDIS_NOTICE, "backup leveldb path: %s", path);
-
 clean:
   leveldb_options_destroy(options);
   zfree(path);
@@ -506,9 +644,10 @@ clean:
 void backupCommand(redisClient *c) {
   size_t len = sdslen(c->argv[1]->ptr);
   char *path = zmalloc(len + 1);
+  pthread_t tid;
+
   memcpy(path, c->argv[1]->ptr, len);
   path[len] = '\0';
-  pthread_t tid;
   int err = pthread_create(&tid, NULL, &leveldbBackup, path);
   if(err != 0){ 
     redisLog(REDIS_WARNING, "backup leveldb thread err: %d", err);

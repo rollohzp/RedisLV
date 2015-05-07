@@ -470,12 +470,11 @@ void hsetCommand(redisClient *c) {
 
     if ((o = hashTypeLookupWriteOrCreate(c,c->argv[1])) == NULL) return;
 
-    leveldbHset(&server.ldb, c->argv[1], c->argv[2], c->argv[3]);
-
     hashTypeTryConversion(o,c->argv,2,3);
     hashTypeTryObjectEncoding(o,&c->argv[2], &c->argv[3]);
     update = hashTypeSet(o,c->argv[2],c->argv[3]);
     addReply(c, update ? shared.czero : shared.cone);
+    leveldbHset(&server.ldb, c->argv);
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(REDIS_NOTIFY_HASH,"hset",c->argv[1],c->db->id);
     server.dirty++;
@@ -492,6 +491,7 @@ void hsetnxCommand(redisClient *c) {
         hashTypeTryObjectEncoding(o,&c->argv[2], &c->argv[3]);
         hashTypeSet(o,c->argv[2],c->argv[3]);
         addReply(c, shared.cone);
+        leveldbHset(&server.ldb, c->argv);
         signalModifiedKey(c->db,c->argv[1]);
         notifyKeyspaceEvent(REDIS_NOTIFY_HASH,"hset",c->argv[1],c->db->id);
         server.dirty++;
@@ -509,14 +509,13 @@ void hmsetCommand(redisClient *c) {
 
     if ((o = hashTypeLookupWriteOrCreate(c,c->argv[1])) == NULL) return;
 
-    leveldbHmset(&server.ldb, c->argv, c->argc);
-
     hashTypeTryConversion(o,c->argv,2,c->argc-1);
     for (i = 2; i < c->argc; i += 2) {
         hashTypeTryObjectEncoding(o,&c->argv[i], &c->argv[i+1]);
         hashTypeSet(o,c->argv[i],c->argv[i+1]);
     }
     addReply(c, shared.ok);
+    leveldbHmset(&server.ldb, c->argv, c->argc);
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(REDIS_NOTIFY_HASH,"hset",c->argv[1],c->db->id);
     server.dirty++;
@@ -548,12 +547,11 @@ void hincrbyCommand(redisClient *c) {
     value += incr;
     new = createStringObjectFromLongLong(value);
 
-    leveldbHset(&server.ldb, c->argv[1], c->argv[2], new);
-
     hashTypeTryObjectEncoding(o,&c->argv[2],NULL);
     hashTypeSet(o,c->argv[2],new);
     decrRefCount(new);
     addReplyLongLong(c,value);
+    leveldbHsetDirect(&server.ldb, c->argv[1], c->argv[2], new);
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(REDIS_NOTIFY_HASH,"hincrby",c->argv[1],c->db->id);
     server.dirty++;
@@ -578,12 +576,10 @@ void hincrbyfloatCommand(redisClient *c) {
 
     value += incr;
     new = createStringObjectFromLongDouble(value,1);
-
-    leveldbHset(&server.ldb, c->argv[1], c->argv[2], new);
-
     hashTypeTryObjectEncoding(o,&c->argv[2],NULL);
     hashTypeSet(o,c->argv[2],new);
     addReplyBulk(c,new);
+    leveldbHsetDirect(&server.ldb, c->argv[1], c->argv[2], new);
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(REDIS_NOTIFY_HASH,"hincrbyfloat",c->argv[1],c->db->id);
     server.dirty++;
@@ -668,8 +664,6 @@ void hdelCommand(redisClient *c) {
     robj *o;
     int j, deleted = 0, keyremoved = 0;
 
-    leveldbHdel(&server.ldb, c->argv, c->argc);
-
     if ((o = lookupKeyWriteOrReply(c,c->argv[1],shared.czero)) == NULL ||
         checkType(c,o,REDIS_HASH)) return;
 
@@ -692,6 +686,7 @@ void hdelCommand(redisClient *c) {
         server.dirty += deleted;
     }
     addReplyLongLong(c,deleted);
+    leveldbHdel(&server.ldb, c->argv, c->argc);
 }
 
 void hlenCommand(redisClient *c) {
