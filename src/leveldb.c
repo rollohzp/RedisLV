@@ -646,6 +646,10 @@ cleanup:
 }
 
 void backupCommand(redisClient *c) {
+  if(server.leveldb_state == REDIS_LEVELDB_OFF) {
+    addReplyError(c,"leveldb off");
+    return;
+  }
   size_t len = sdslen(c->argv[1]->ptr);
   char *path = zmalloc(len + 1);
   pthread_t tid;
