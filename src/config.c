@@ -907,6 +907,11 @@ void configSetCommand(redisClient *c) {
             ll < 0) goto badfmt;
         server.repl_min_slaves_max_lag = ll;
         refreshGoodSlavesCount();
+    } else if (!strcasecmp(c->argv[2]->ptr,"leveldb")) {
+      int yn = yesnotoi(o->ptr);
+
+      if (yn == -1) goto badfmt;
+      server.leveldb_state = yn ? REDIS_LEVELDB_ON : REDIS_LEVELDB_OFF;
     } else {
         addReplyErrorFormat(c,"Unsupported CONFIG parameter: %s",
             (char*)c->argv[2]->ptr);
