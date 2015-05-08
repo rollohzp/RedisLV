@@ -2,9 +2,12 @@
 ========================================
 
 ###Why
+
 1. Save耗内存
 2. Aof恢复慢
+
 ###RedisRT目前支持的Redis写入操作
+
 | Key    | Hash         | Set    | SortedSet |
 | ------ | ------------ | ------ | --------- |
 | DEL    | HINCRBY      | SADD   | ZADD      |
