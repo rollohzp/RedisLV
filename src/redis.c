@@ -1456,6 +1456,7 @@ void initServerConfig(void) {
     server.watchdog_period = 0;
     server.leveldb_state = REDIS_LEVELDB_OFF;
     server.leveldb_path = NULL;
+    server.leveldb_op_num = 0;
 }
 
 /* This function will try to raise the max number of open files accordingly to
@@ -2224,9 +2225,7 @@ int prepareForShutdown(int flags) {
         redisLog(REDIS_NOTICE,"Calling fsync() on the AOF file.");
         aof_fsync(server.aof_fd);
     }
-    if(server.leveldb_state != REDIS_LEVELDB_OFF) {
-      closeleveldb(&server.ldb);
-    }
+    if(server.leveldb_state != REDIS_LEVELDB_OFF) closeleveldb(&server.ldb);
     if ((server.saveparamslen > 0 && !nosave) || save) {
         redisLog(REDIS_NOTICE,"Saving the final RDB snapshot before exiting.");
         /* Snapshotting. Perform a SYNC SAVE and exit */
@@ -2879,15 +2878,18 @@ sds genRedisInfoString(char *section) {
     if (allsections || defsections || !strcasecmp(section,"leveldb")) {
       if (sections++) info = sdscat(info,"\r\n");
       info = sdscatprintf(info, "# leveldb\r\n");
-      char *ss = leveldb_property_value(server.ldb.db, "leveldb.stats");
-      info = sdscat(info,ss);
-      leveldb_free(ss);
-      ss = NULL;
-      info = sdscat(info,"\r\n");
-      ss = leveldb_property_value(server.ldb.db, "leveldb.sstables");
-      info = sdscat(info,ss);
-      leveldb_free(ss);
-      ss = NULL;
+      if(server.leveldb_state != REDIS_LEVELDB_OFF) {
+        info = sdscatprintf(info, "leveldb op num=%lld\r\n", server.leveldb_op_num);
+        char *ss = leveldb_property_value(server.ldb.db, "leveldb.stats");
+        info = sdscat(info,ss);
+        leveldb_free(ss);
+        ss = NULL;
+        info = sdscat(info,"\r\n");
+        ss = leveldb_property_value(server.ldb.db, "leveldb.sstables");
+        info = sdscat(info,ss);
+        leveldb_free(ss);
+        ss = NULL;
+      }
     }
     return info;
 }

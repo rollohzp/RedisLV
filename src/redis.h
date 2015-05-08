@@ -853,6 +853,7 @@ struct redisServer {
     int leveldb_state;   
     char *leveldb_path; 
     struct leveldb ldb;
+    long long leveldb_op_num;
 };
 
 typedef struct pubsubPattern {

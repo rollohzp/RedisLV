@@ -5,23 +5,19 @@
 int loadleveldb(char *path) {
   redisLog(REDIS_NOTICE, "load leveldb path: %s", path);
 
-  struct redisClient *fakeClient;
+  struct redisClient *fakeClient = createFakeClient();
   int old_leveldb_state = server.leveldb_state;
   long loops = 0;
 
   server.leveldb_state = REDIS_LEVELDB_OFF;
-
   initleveldb(&server.ldb, path);
-
-  leveldb_iterator_t *iterator = leveldb_create_iterator(server.ldb.db, server.ldb.roptions);
-
   startLoading(NULL);
-  fakeClient = createFakeClient();
 
   char *data = NULL;
   char *value = NULL;
   size_t dataLen = 0;
   size_t valueLen = 0;
+  leveldb_iterator_t *iterator = leveldb_create_iterator(server.ldb.db, server.ldb.roptions);
 
   for(leveldb_iter_seek_to_first(iterator); leveldb_iter_valid(iterator); leveldb_iter_next(iterator)) {
     int argc;
@@ -69,13 +65,11 @@ int loadleveldb(char *path) {
       redisLog(REDIS_WARNING,"load leveldb no found type: %d", data[0]);
       continue;
     }
-    /* Command lookup */
     cmd = lookupCommand(argv[0]->ptr);
     if (!cmd) {
       redisLog(REDIS_WARNING,"Unknown command '%s' from leveldb", (char*)argv[0]->ptr);
       exit(1);
     }
-    /* Run the command in the context of a fake client */
     cmd->proc(fakeClient);
 
     /* The fake client should not have a reply */
@@ -173,6 +167,7 @@ void leveldbHsetDirect(struct leveldb *ldb, robj *argv1, robj *argv2, robj *argv
     leveldb_free(err); 
     err = NULL;
   }
+  server.leveldb_op_num++;
 
   sdsfree(key);
   decrRefCount(r1);
@@ -207,6 +202,7 @@ void leveldbHmset(struct leveldb *ldb, robj** argv, int argc) {
     leveldb_free(err); 
     err = NULL;
   }
+  server.leveldb_op_num++;
 
   sdsfree(key);
   decrRefCount(r1);
@@ -243,6 +239,7 @@ void leveldbHdel(struct leveldb *ldb, robj** argv, int argc) {
     leveldb_free(err); 
     err = NULL;
   }
+  server.leveldb_op_num++;
 
   sdsfree(key);
   decrRefCount(r1);
@@ -281,6 +278,7 @@ void leveldbHclear(struct leveldb *ldb, robj *argv) {
       err = NULL;
     }
   }
+  server.leveldb_op_num++;
 
   sdsfree(key);
   decrRefCount(r1);
@@ -332,6 +330,7 @@ void leveldbSadd(struct leveldb *ldb, robj** argv, int argc) {
     leveldb_free(err); 
     err = NULL;
   }
+  server.leveldb_op_num++;
 
   sdsfree(key);
   decrRefCount(r1);
@@ -368,6 +367,7 @@ void leveldbSrem(struct leveldb *ldb, robj** argv, int argc) {
     leveldb_free(err); 
     err = NULL;
   }
+  server.leveldb_op_num++;
 
   sdsfree(key);
   decrRefCount(r1);
@@ -406,6 +406,7 @@ void leveldbSclear(struct leveldb *ldb, robj* argv) {
       err = NULL;
     }
   }
+  server.leveldb_op_num++;
 
   sdsfree(key);
   decrRefCount(r1);
@@ -458,6 +459,7 @@ void leveldbZadd(struct leveldb *ldb, robj** argv, int argc) {
     leveldb_free(err); 
     err = NULL;
   }
+  server.leveldb_op_num++;
 
   sdsfree(key);
   decrRefCount(r1);
@@ -488,6 +490,7 @@ void leveldbZaddDirect(struct leveldb *ldb, robj* argv1, robj* argv2, double sco
     leveldb_free(err); 
     err = NULL;
   }
+  server.leveldb_op_num++;
 
   sdsfree(key);
   decrRefCount(r1);
@@ -520,6 +523,7 @@ void leveldbZrem(struct leveldb *ldb, robj** argv, int argc) {
     leveldb_free(err); 
     err = NULL;
   }
+  server.leveldb_op_num++;
 
   sdsfree(key);
   decrRefCount(r1);
@@ -558,6 +562,7 @@ void leveldbZclear(struct leveldb *ldb, robj* argv) {
       err = NULL;
     }
   }
+  server.leveldb_op_num++;
 
   sdsfree(key);
   decrRefCount(r1);
@@ -579,19 +584,15 @@ void *leveldbBackup(void *arg) {
   leveldb_options_set_compression(options, 1);
   leveldb_options_set_write_buffer_size(options, 64 * 1024 * 1024);
 
-  leveldb_t *db = leveldb_open(options, path, &err);
   char *err = NULL;
+  leveldb_t *db = leveldb_open(options, path, &err);
 
   if (err != NULL) {
     redisLog(REDIS_WARNING, "open leveldb err: %s", err);
     leveldb_free(err); 
     err = NULL;
-    goto clean;
+    goto cleanup;
   }
-
-  leveldb_writeoptions_t *woptions = leveldb_writeoptions_create();
-
-  leveldb_writeoptions_set_sync(woptions, 0);
 
   char *data = NULL;
   size_t dataLen = 0;
@@ -599,8 +600,10 @@ void *leveldbBackup(void *arg) {
   size_t valueLen = 0;
   int i = 0;
   leveldb_writebatch_t* wb = leveldb_writebatch_create();
+  leveldb_writeoptions_t *woptions = leveldb_writeoptions_create();
   leveldb_iterator_t *iterator = leveldb_create_iterator(server.ldb.db, server.ldb.roptions);
 
+  leveldb_writeoptions_set_sync(woptions, 0);
   for(leveldb_iter_seek_to_first(iterator); leveldb_iter_valid(iterator); leveldb_iter_next(iterator)) {
     data = (char*) leveldb_iter_key(iterator, &dataLen);
     value = (char*) leveldb_iter_value(iterator, &valueLen);
@@ -634,8 +637,9 @@ void *leveldbBackup(void *arg) {
   leveldb_iter_destroy(iterator);
   leveldb_writeoptions_destroy(woptions);
   leveldb_close(db);
+
   redisLog(REDIS_NOTICE, "backup leveldb path: %s", path);
-clean:
+cleanup:
   leveldb_options_destroy(options);
   zfree(path);
   return (void *)NULL;
