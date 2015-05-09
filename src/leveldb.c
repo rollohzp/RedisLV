@@ -105,7 +105,6 @@ void initleveldb(struct leveldb* ldb, char *path) {
   leveldb_options_set_create_if_missing(ldb->options, 1);
   leveldb_options_set_compression(ldb->options, 1);
   leveldb_options_set_write_buffer_size(ldb->options, 64 * 1024 * 1024);
-  leveldb_options_set_block_size(ldb->options, 4 * 1024);
   leveldb_options_set_max_open_files(ldb->options, 500);
 
   char *err = NULL;
@@ -532,6 +531,80 @@ void leveldbZrem(struct leveldb *ldb, robj** argv, int argc) {
     decrRefCount(rs[j]);
   }
   zfree(rs);
+}
+
+void leveldbZremByLongLong(struct leveldb *ldb, robj *arg, long long vlong) {
+  if(server.leveldb_state == REDIS_LEVELDB_OFF) {
+    return;
+  }
+
+  robj *r1 = getDecodedObject(arg);
+  sds key = createleveldbSortedSetHead(r1->ptr);
+  char *err = NULL;
+  char buf[64];
+  int len;
+
+  len = ll2string(buf,64,vlong);
+  key = sdscatlen(key, buf, len);
+  //redisLog(REDIS_NOTICE, "leveldbZremByLongLong %s", key);
+  leveldb_delete(ldb->db, ldb->woptions, key, sdslen(key), &err);
+  if (err != NULL) {
+    redisLog(REDIS_WARNING, "zrem by long long leveldb err: %s", err);
+    leveldb_free(err); 
+    err = NULL;
+  }
+  server.leveldb_op_num++;
+
+  sdsfree(key);
+  decrRefCount(r1);
+}
+
+void leveldbZremByCBuffer(struct leveldb *ldb, robj *arg, unsigned char *vstr, unsigned int vlen) {
+  if(server.leveldb_state == REDIS_LEVELDB_OFF) {
+    return;
+  }
+
+  robj *r1 = getDecodedObject(arg);
+  sds key = createleveldbSortedSetHead(r1->ptr);
+  char *err = NULL;
+
+  key = sdscatlen(key, vstr, vlen);
+  //redisLog(REDIS_NOTICE, "leveldbZremByCBuffer %s", key);
+  leveldb_delete(ldb->db, ldb->woptions, key, sdslen(key), &err);
+  if (err != NULL) {
+    redisLog(REDIS_WARNING, "zrem by c buffer leveldb err: %s", err);
+    leveldb_free(err); 
+    err = NULL;
+  }
+  server.leveldb_op_num++;
+
+  sdsfree(key);
+  decrRefCount(r1);
+}
+
+void leveldbZremByObject(struct leveldb *ldb, robj *arg, robj *field) {
+  if(server.leveldb_state == REDIS_LEVELDB_OFF) {
+    return;
+  }
+
+  robj *r1 = getDecodedObject(arg);
+  robj *r2 = getDecodedObject(field);
+  sds key = createleveldbSortedSetHead(r1->ptr);
+  char *err = NULL;
+
+  key = sdscatsds(key,  r2->ptr);
+  //redisLog(REDIS_NOTICE, "leveldbZremByObject %s", key);
+  leveldb_delete(ldb->db, ldb->woptions, key, sdslen(key), &err);
+  if (err != NULL) {
+    redisLog(REDIS_WARNING, "zrem by object leveldb err: %s", err);
+    leveldb_free(err); 
+    err = NULL;
+  }
+  server.leveldb_op_num++;
+
+  sdsfree(key);
+  decrRefCount(r1);
+  decrRefCount(r2);
 }
 
 void leveldbZclear(struct leveldb *ldb, robj* argv) {

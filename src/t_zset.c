@@ -289,7 +289,7 @@ zskiplistNode *zslLastInRange(zskiplist *zsl, zrangespec *range) {
  * Min and max are inclusive, so a score >= min || score <= max is deleted.
  * Note that this function takes the reference to the hash table view of the
  * sorted set, in order to remove the elements from the hash table too. */
-unsigned long zslDeleteRangeByScore(zskiplist *zsl, zrangespec *range, dict *dict) {
+unsigned long zslDeleteRangeByScore(robj *key, zskiplist *zsl, zrangespec *range, dict *dict) {
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     unsigned long removed = 0;
     int i;
@@ -312,6 +312,7 @@ unsigned long zslDeleteRangeByScore(zskiplist *zsl, zrangespec *range, dict *dic
     {
         zskiplistNode *next = x->level[0].forward;
         zslDeleteNode(zsl,x,update);
+        leveldbZremByObject(&server.ldb,key,x->obj);
         dictDelete(dict,x->obj);
         zslFreeNode(x);
         removed++;
@@ -320,7 +321,7 @@ unsigned long zslDeleteRangeByScore(zskiplist *zsl, zrangespec *range, dict *dic
     return removed;
 }
 
-unsigned long zslDeleteRangeByLex(zskiplist *zsl, zlexrangespec *range, dict *dict) {
+unsigned long zslDeleteRangeByLex(robj* key, zskiplist *zsl, zlexrangespec *range, dict *dict) {
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     unsigned long removed = 0;
     int i;
@@ -341,6 +342,7 @@ unsigned long zslDeleteRangeByLex(zskiplist *zsl, zlexrangespec *range, dict *di
     while (x && zslLexValueLteMax(x->obj,range)) {
         zskiplistNode *next = x->level[0].forward;
         zslDeleteNode(zsl,x,update);
+        leveldbZremByObject(&server.ldb,key,x->obj);
         dictDelete(dict,x->obj);
         zslFreeNode(x);
         removed++;
@@ -351,7 +353,7 @@ unsigned long zslDeleteRangeByLex(zskiplist *zsl, zlexrangespec *range, dict *di
 
 /* Delete all the elements with rank between start and end from the skiplist.
  * Start and end are inclusive. Note that start and end need to be 1-based */
-unsigned long zslDeleteRangeByRank(zskiplist *zsl, unsigned int start, unsigned int end, dict *dict) {
+unsigned long zslDeleteRangeByRank(robj *key, zskiplist *zsl, unsigned int start, unsigned int end, dict *dict) {
     zskiplistNode *update[ZSKIPLIST_MAXLEVEL], *x;
     unsigned long traversed = 0, removed = 0;
     int i;
@@ -370,6 +372,7 @@ unsigned long zslDeleteRangeByRank(zskiplist *zsl, unsigned int start, unsigned 
     while (x && traversed <= end) {
         zskiplistNode *next = x->level[0].forward;
         zslDeleteNode(zsl,x,update);
+        leveldbZremByObject(&server.ldb,key,x->obj);
         dictDelete(dict,x->obj);
         zslFreeNode(x);
         removed++;
@@ -1009,10 +1012,13 @@ unsigned char *zzlInsert(unsigned char *zl, robj *ele, double score) {
     return zl;
 }
 
-unsigned char *zzlDeleteRangeByScore(unsigned char *zl, zrangespec *range, unsigned long *deleted) {
+unsigned char *zzlDeleteRangeByScore(robj *key, unsigned char *zl, zrangespec *range, unsigned long *deleted) {
     unsigned char *eptr, *sptr;
     double score;
     unsigned long num = 0;
+    unsigned char *vstr;
+    unsigned int vlen;
+    long long vlong;
 
     if (deleted != NULL) *deleted = 0;
 
@@ -1024,6 +1030,12 @@ unsigned char *zzlDeleteRangeByScore(unsigned char *zl, zrangespec *range, unsig
     while ((sptr = ziplistNext(zl,eptr)) != NULL) {
         score = zzlGetScore(sptr);
         if (zslValueLteMax(score,range)) {
+            /* Delete leveldb data */
+            redisAssert(ziplistGet(eptr,&vstr,&vlen,&vlong));
+            if (vstr == NULL)
+                leveldbZremByLongLong(&server.ldb,key,vlong);
+            else
+                leveldbZremByCBuffer(&server.ldb,key,vstr,vlen);
             /* Delete both the element and the score. */
             zl = ziplistDelete(zl,&eptr);
             zl = ziplistDelete(zl,&eptr);
@@ -1038,9 +1050,12 @@ unsigned char *zzlDeleteRangeByScore(unsigned char *zl, zrangespec *range, unsig
     return zl;
 }
 
-unsigned char *zzlDeleteRangeByLex(unsigned char *zl, zlexrangespec *range, unsigned long *deleted) {
+unsigned char *zzlDeleteRangeByLex(robj *key, unsigned char *zl, zlexrangespec *range, unsigned long *deleted) {
     unsigned char *eptr, *sptr;
     unsigned long num = 0;
+    unsigned char *vstr;
+    unsigned int vlen;
+    long long vlong;
 
     if (deleted != NULL) *deleted = 0;
 
@@ -1051,6 +1066,12 @@ unsigned char *zzlDeleteRangeByLex(unsigned char *zl, zlexrangespec *range, unsi
      * byte and ziplistNext will return NULL. */
     while ((sptr = ziplistNext(zl,eptr)) != NULL) {
         if (zzlLexValueLteMax(eptr,range)) {
+            /* Delete leveldb data */
+            redisAssert(ziplistGet(eptr,&vstr,&vlen,&vlong));
+            if (vstr == NULL)
+                leveldbZremByLongLong(&server.ldb,key,vlong);
+            else
+                leveldbZremByCBuffer(&server.ldb,key,vstr,vlen);
             /* Delete both the element and the score. */
             zl = ziplistDelete(zl,&eptr);
             zl = ziplistDelete(zl,&eptr);
@@ -1067,8 +1088,28 @@ unsigned char *zzlDeleteRangeByLex(unsigned char *zl, zlexrangespec *range, unsi
 
 /* Delete all the elements with rank between start and end from the skiplist.
  * Start and end are inclusive. Note that start and end need to be 1-based */
-unsigned char *zzlDeleteRangeByRank(unsigned char *zl, unsigned int start, unsigned int end, unsigned long *deleted) {
+unsigned char *zzlDeleteRangeByRank(robj *key, unsigned char *zl, unsigned int start, unsigned int end, unsigned long *deleted) {
     unsigned int num = (end-start)+1;
+    /* Delete leveldb data*/
+    unsigned char *eptr, *sptr;
+    unsigned char *vstr;
+    unsigned int vlen;
+    long long vlong;
+    unsigned int rangelen = num;
+
+    eptr = ziplistIndex(zl,2*(start-1));
+    redisAssert(eptr != NULL);
+    sptr = ziplistNext(zl,eptr);
+    redisAssert(sptr != NULL);
+    while (rangelen--) {
+      redisAssert(ziplistGet(eptr,&vstr,&vlen,&vlong));
+      if (vstr == NULL)
+        leveldbZremByLongLong(&server.ldb,key,vlong);
+      else
+        leveldbZremByCBuffer(&server.ldb,key,vstr,vlen);
+      zzlNext(zl,&eptr,&sptr);
+    }
+
     if (deleted) *deleted = num;
     zl = ziplistDeleteRange(zl,2*(start-1),2*num);
     return zl;
@@ -1432,13 +1473,13 @@ void zremrangeGenericCommand(redisClient *c, int rangetype) {
     if (zobj->encoding == REDIS_ENCODING_ZIPLIST) {
         switch(rangetype) {
         case ZRANGE_RANK:
-            zobj->ptr = zzlDeleteRangeByRank(zobj->ptr,start+1,end+1,&deleted);
+            zobj->ptr = zzlDeleteRangeByRank(key,zobj->ptr,start+1,end+1,&deleted);
             break;
         case ZRANGE_SCORE:
-            zobj->ptr = zzlDeleteRangeByScore(zobj->ptr,&range,&deleted);
+            zobj->ptr = zzlDeleteRangeByScore(key,zobj->ptr,&range,&deleted);
             break;
         case ZRANGE_LEX:
-            zobj->ptr = zzlDeleteRangeByLex(zobj->ptr,&lexrange,&deleted);
+            zobj->ptr = zzlDeleteRangeByLex(key,zobj->ptr,&lexrange,&deleted);
             break;
         }
         if (zzlLength(zobj->ptr) == 0) {
@@ -1449,13 +1490,13 @@ void zremrangeGenericCommand(redisClient *c, int rangetype) {
         zset *zs = zobj->ptr;
         switch(rangetype) {
         case ZRANGE_RANK:
-            deleted = zslDeleteRangeByRank(zs->zsl,start+1,end+1,zs->dict);
+            deleted = zslDeleteRangeByRank(key,zs->zsl,start+1,end+1,zs->dict);
             break;
         case ZRANGE_SCORE:
-            deleted = zslDeleteRangeByScore(zs->zsl,&range,zs->dict);
+            deleted = zslDeleteRangeByScore(key,zs->zsl,&range,zs->dict);
             break;
         case ZRANGE_LEX:
-            deleted = zslDeleteRangeByLex(zs->zsl,&lexrange,zs->dict);
+            deleted = zslDeleteRangeByLex(key,zs->zsl,&lexrange,zs->dict);
             break;
         }
         if (htNeedsResize(zs->dict)) dictResize(zs->dict);

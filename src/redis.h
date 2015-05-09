@@ -1466,6 +1466,9 @@ void leveldbSclear(struct leveldb *ldb, robj* argv);
 void leveldbZaddDirect(struct leveldb *ldb, robj *argv1, robj *argv2, double score);
 void leveldbZadd(struct leveldb *ldb, robj** argv, int argc);
 void leveldbZrem(struct leveldb *ldb, robj** argv, int argc);
+void leveldbZremByLongLong(struct leveldb *ldb, robj *arg, long long vlong);
+void leveldbZremByCBuffer(struct leveldb *ldb, robj *arg, unsigned char *vstr, unsigned int vlen);
+void leveldbZremByObject(struct leveldb *ldb, robj *arg, robj *field);
 void leveldbZclear(struct leveldb *ldb, robj* argv);
 
 #if defined(__GNUC__)

@@ -8,10 +8,11 @@
 
 ###RedisRT目前支持的Redis写入操作
 
-| Key    | Hash         | Set    | SortedSet |
-| ------ | ------------ | ------ | --------- |
-| DEL    | HINCRBY      | SADD   | ZADD      |
-|        | HINCRBYFLOAT | SREM   | ZINCRBY   | 
-|        | HMSET        |        | ZREM      |
-|        | HSET         |        |           |
-|        | HSETNX       |        |           |
+| Key    | Hash         | Set    | SortedSet        |
+| ------ | ------------ | ------ | ---------------- |
+| DEL    | HINCRBY      | SADD   | ZADD             |
+|        | HINCRBYFLOAT | SREM   | ZINCRBY          | 
+|        | HMSET        |        | ZREM             |
+|        | HSET         |        | ZREMRANGEBYRANK  |
+|        | HSETNX       |        | ZREMRANGEBYSCORE |
+|        |              |        | ZREMRANGEBYLEX   |
