@@ -650,7 +650,9 @@ void leveldbZclear(struct leveldb *ldb, robj* argv) {
 
 void *leveldbBackup(void *arg) {
   char *path = (char *)arg;
+  time_t backup_start = time(NULL);
   leveldb_options_t *options = leveldb_options_create();
+  int success = 0;
 
   leveldb_options_set_create_if_missing(options, 1);
   leveldb_options_set_error_if_exists(options, 1);
@@ -689,6 +691,7 @@ void *leveldbBackup(void *arg) {
         redisLog(REDIS_WARNING, "backup write leveldb err: %s", err);
         leveldb_free(err); 
         err = NULL;
+        goto closehandler;
       }
       leveldb_writebatch_destroy(wb);
       wb = leveldb_writebatch_create();
@@ -698,22 +701,48 @@ void *leveldbBackup(void *arg) {
   if (err != NULL) {
     redisLog(REDIS_WARNING, "backup write leveldb err: %s", err);
     leveldb_free(err); 
+    err = NULL;
+    goto closehandler;
   }
-
   leveldb_writebatch_destroy(wb);
   leveldb_iter_get_error(iterator, &err);
   if(err != NULL) {
     redisLog(REDIS_WARNING, "backup leveldb iterator err: %s", err);
     leveldb_free(err);
     err = NULL;
+    goto closehandler;
   }
+  success = 1;
+closehandler:
   leveldb_iter_destroy(iterator);
   leveldb_writeoptions_destroy(woptions);
   leveldb_close(db);
-
-  redisLog(REDIS_NOTICE, "backup leveldb path: %s", path);
 cleanup:
   leveldb_options_destroy(options);
+  if( success == 1) {
+    time_t backup_end = time(NULL);
+    char info[1024];
+    char tmpfile[512];
+    char backupfile[512];
+    snprintf(tmpfile,512,"%s/temp.log", path);
+    snprintf(backupfile,512,"%s/BACKUP.log", path);
+    FILE *fp = fopen(tmpfile,"w");
+
+    if (!fp) {
+      redisLog(REDIS_WARNING, "Failed opening .log for saving: %s",
+          strerror(errno));
+    }else{
+      int infolen = snprintf(info, sizeof(info), "BACKUP\n\tSTART:\t%jd\n\tEND:\t\t%jd\n\tCOST:\t\t%jd\nSUCCESS", backup_start, backup_end, backup_end-backup_start);
+
+      fwrite(info, infolen, 1, fp);
+      fclose(fp);
+      if (rename(tmpfile,backupfile) == -1) {
+        redisLog(REDIS_WARNING,"Error moving temp backup file on the final destination: %s", strerror(errno));
+      }
+      unlink(tmpfile);
+      redisLog(REDIS_NOTICE, "backup leveldb path: %s", path);
+    }
+  }
   zfree(path);
   return (void *)NULL;
 }
