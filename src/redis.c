@@ -3267,8 +3267,11 @@ int checkForSentinelMode(int argc, char **argv) {
 void loadDataFromDisk(void) {
     long long start = ustime();
     if (server.leveldb_state == REDIS_LEVELDB_ON) {
-        if (loadleveldb(server.leveldb_path) == REDIS_OK) 
+        if (loadleveldb(server.leveldb_path) == REDIS_OK) { 
             redisLog(REDIS_NOTICE,"DB loaded from leveldb: %.3f seconds",(float)(ustime()-start)/1000000);
+        }else{
+            exit(1);
+        }
     } else if (server.aof_state == REDIS_AOF_ON) {
         if (loadAppendOnlyFile(server.aof_filename) == REDIS_OK)
             redisLog(REDIS_NOTICE,"DB loaded from append only file: %.3f seconds",(float)(ustime()-start)/1000000);

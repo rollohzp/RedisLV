@@ -271,7 +271,7 @@ void saddCommand(redisClient *c) {
     }
     server.dirty += added;
     addReplyLongLong(c,added);
-    leveldbSadd(&server.ldb, c->argv, c->argc);
+    leveldbSadd(c->db->id,&server.ldb,c->argv,c->argc);
 }
 
 void sremCommand(redisClient *c) {
@@ -299,7 +299,7 @@ void sremCommand(redisClient *c) {
         server.dirty += deleted;
     }
     addReplyLongLong(c,deleted);
-    leveldbSrem(&server.ldb, c->argv, c->argc);
+    leveldbSrem(c->db->id,&server.ldb,c->argv,c->argc);
 }
 
 void smoveCommand(redisClient *c) {

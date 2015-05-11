@@ -1455,21 +1455,21 @@ void initleveldb(struct leveldb* ldb, char *path);
 int loadleveldb(char *path);
 void closeleveldb(struct leveldb *ldb);
 
-void leveldbHset(struct leveldb *ldb, robj** argv);
-void leveldbHsetDirect(struct leveldb *ldb, robj *argv1, robj *argv2, robj *argv3);
-void leveldbHmset(struct leveldb *ldb, robj** argv, int argc);
-void leveldbHdel(struct leveldb *ldb, robj** argv, int argc);
-void leveldbHclear(struct leveldb *ldb, robj* argv);
-void leveldbSadd(struct leveldb *ldb, robj** argv, int argc);
-void leveldbSrem(struct leveldb *ldb, robj** argv, int argc);
-void leveldbSclear(struct leveldb *ldb, robj* argv);
-void leveldbZaddDirect(struct leveldb *ldb, robj *argv1, robj *argv2, double score);
-void leveldbZadd(struct leveldb *ldb, robj** argv, int argc);
-void leveldbZrem(struct leveldb *ldb, robj** argv, int argc);
-void leveldbZremByLongLong(struct leveldb *ldb, robj *arg, long long vlong);
-void leveldbZremByCBuffer(struct leveldb *ldb, robj *arg, unsigned char *vstr, unsigned int vlen);
-void leveldbZremByObject(struct leveldb *ldb, robj *arg, robj *field);
-void leveldbZclear(struct leveldb *ldb, robj* argv);
+void leveldbHset(int dbid, struct leveldb *ldb, robj** argv);
+void leveldbHsetDirect(int dbid, struct leveldb *ldb, robj *argv1, robj *argv2, robj *argv3);
+void leveldbHmset(int dbid, struct leveldb *ldb, robj** argv, int argc);
+void leveldbHdel(int dbid, struct leveldb *ldb, robj** argv, int argc);
+void leveldbHclear(int dbid, struct leveldb *ldb, robj* argv);
+void leveldbSadd(int dbid, struct leveldb *ldb, robj** argv, int argc);
+void leveldbSrem(int dbid, struct leveldb *ldb, robj** argv, int argc);
+void leveldbSclear(int dbid, struct leveldb *ldb, robj* argv);
+void leveldbZaddDirect(int dbid, struct leveldb *ldb, robj *argv1, robj *argv2, double score);
+void leveldbZadd(int dbid, struct leveldb *ldb, robj** argv, int argc);
+void leveldbZrem(int dbid, struct leveldb *ldb, robj** argv, int argc);
+void leveldbZremByLongLong(int dbid, struct leveldb *ldb, robj *arg, long long vlong);
+void leveldbZremByCBuffer(int dbid, struct leveldb *ldb, robj *arg, unsigned char *vstr, unsigned int vlen);
+void leveldbZremByObject(int dbid, struct leveldb *ldb, robj *arg, robj *field);
+void leveldbZclear(int dbid, struct leveldb *ldb, robj* argv);
 
 #if defined(__GNUC__)
 void *calloc(size_t count, size_t size) __attribute__ ((deprecated));
