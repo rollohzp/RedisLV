@@ -251,6 +251,7 @@ void flushdbCommand(redisClient *c) {
     dictEmpty(c->db->dict,NULL);
     dictEmpty(c->db->expires,NULL);
     addReply(c,shared.ok);
+    leveldbFlushdb(c->db->id, &server.ldb);
 }
 
 void flushallCommand(redisClient *c) {
@@ -269,6 +270,7 @@ void flushallCommand(redisClient *c) {
         server.dirty = saved_dirty;
     }
     server.dirty++;
+    leveldbFlushall(&server.ldb);
 }
 
 void delCommand(redisClient *c) {

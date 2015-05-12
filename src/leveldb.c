@@ -674,6 +674,61 @@ void leveldbZclear(int dbid, struct leveldb *ldb, robj* argv) {
   leveldb_iter_destroy(iterator);
 }
 
+void leveldbFlushdb(int dbid, struct leveldb* ldb) {
+  char tmp[1];
+  char *err = NULL;
+  char *data = NULL;
+  size_t dataLen = 0;
+  leveldb_iterator_t *iterator = leveldb_create_iterator(ldb->db, ldb->roptions);
+
+  tmp[LEVELDB_KEY_FLAG_DATABASE_ID] = dbid;
+  for(leveldb_iter_seek(iterator, tmp, 1); leveldb_iter_valid(iterator); leveldb_iter_next(iterator)) {
+    data = (char*) leveldb_iter_key(iterator, &dataLen);
+    if(data[LEVELDB_KEY_FLAG_DATABASE_ID] != dbid) break;
+    leveldb_delete(ldb->db, ldb->woptions, data, dataLen, &err);
+    if (err != NULL) {
+      redisLog(REDIS_WARNING, "flushdb leveldb err: %s", err);
+      leveldb_free(err); 
+      err = NULL;
+    }
+  }
+  server.leveldb_op_num++;
+
+  leveldb_iter_get_error(iterator, &err);
+  if(err != NULL) {
+    redisLog(REDIS_WARNING, "flushdb leveldb iterator err: %s", err);
+    leveldb_free(err);
+    err = NULL;
+  }
+  leveldb_iter_destroy(iterator);
+}
+
+void leveldbFlushall(struct leveldb* ldb) {
+  char *err = NULL;
+  char *data = NULL;
+  size_t dataLen = 0;
+  leveldb_iterator_t *iterator = leveldb_create_iterator(ldb->db, ldb->roptions);
+
+  for(leveldb_iter_seek_to_first(iterator); leveldb_iter_valid(iterator); leveldb_iter_next(iterator)) {
+    data = (char*) leveldb_iter_key(iterator, &dataLen);
+    leveldb_delete(ldb->db, ldb->woptions, data, dataLen, &err);
+    if (err != NULL) {
+      redisLog(REDIS_WARNING, "flushall leveldb err: %s", err);
+      leveldb_free(err); 
+      err = NULL;
+    }
+  }
+  server.leveldb_op_num++;
+
+  leveldb_iter_get_error(iterator, &err);
+  if(err != NULL) {
+    redisLog(REDIS_WARNING, "flushall leveldb iterator err: %s", err);
+    leveldb_free(err);
+    err = NULL;
+  }
+  leveldb_iter_destroy(iterator);
+}
+
 void *leveldbBackup(void *arg) {
   char *path = (char *)arg;
   time_t backup_start = time(NULL);
