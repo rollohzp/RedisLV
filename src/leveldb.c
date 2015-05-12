@@ -2,6 +2,11 @@
 
 #include <pthread.h>
 
+#define LEVELDB_KEY_FLAG_DATABASE_ID 0
+#define LEVELDB_KEY_FLAG_TYPE 1 
+#define LEVELDB_KEY_FLAG_SET_KEY_LEN 2
+#define LEVELDB_KEY_FLAG_SET_KEY 3
+
 int loadleveldb(char *path) {
   redisLog(REDIS_NOTICE, "load leveldb path: %s", path);
 
@@ -19,6 +24,7 @@ int loadleveldb(char *path) {
   char *value = NULL;
   size_t dataLen = 0;
   size_t valueLen = 0;
+  int tmpdbid, tmptype;
   leveldb_iterator_t *iterator = leveldb_create_iterator(server.ldb.db, server.ldb.roptions);
 
   for(leveldb_iter_seek_to_first(iterator); leveldb_iter_valid(iterator); leveldb_iter_next(iterator)) {
@@ -32,48 +38,50 @@ int loadleveldb(char *path) {
       redisLog(REDIS_NOTICE, "load leveldb: %lu", loops);
     }
     data = (char*) leveldb_iter_key(iterator, &dataLen);
-    if(data[0] != dbid) {
-      if(selectDb(fakeClient,data[0]) == REDIS_OK ){
-        dbid = data[0];
+    tmpdbid = data[LEVELDB_KEY_FLAG_DATABASE_ID];
+    tmptype = data[LEVELDB_KEY_FLAG_TYPE];
+    if(tmpdbid != dbid) {
+      if(selectDb(fakeClient,tmpdbid) == REDIS_OK ){
+        dbid = tmpdbid;
       }else{
-        redisLog(REDIS_WARNING, "load leveldb select db error: %d", data[0]);
+        redisLog(REDIS_WARNING, "load leveldb select db error: %d", tmpdbid);
         success = 0;
         break;
       }
     }
-    if(data[1] == 'h'){
+    if(tmptype == 'h'){
       argc = 4;
       argv = zmalloc(sizeof(robj*)*argc);
       fakeClient->argc = argc;
       fakeClient->argv = argv;
       argv[0] = createStringObject("hset",4);
-      len = data[2];
-      argv[1] = createStringObject(data+3,len);
-      argv[2] = createStringObject(data+4+len,dataLen-4-len);
+      len = data[LEVELDB_KEY_FLAG_SET_KEY_LEN];
+      argv[1] = createStringObject(data+LEVELDB_KEY_FLAG_SET_KEY,len);
+      argv[2] = createStringObject(data+LEVELDB_KEY_FLAG_SET_KEY+len+1,dataLen-LEVELDB_KEY_FLAG_SET_KEY-len-1);
       value = (char*) leveldb_iter_value(iterator, &valueLen);
       argv[3] = createStringObject(value, valueLen);
-    }else if(data[1] == 's'){
+    }else if(tmptype == 's'){
       argc = 3;
       argv = zmalloc(sizeof(robj*)*argc);
       fakeClient->argc = argc;
       fakeClient->argv = argv;
       argv[0] = createStringObject("sadd",4);
-      len = data[2];
-      argv[1] = createStringObject(data+3,len);
-      argv[2] = createStringObject(data+4+len,dataLen-4-len);
-    }else if(data[1] == 'z'){
+      len = data[LEVELDB_KEY_FLAG_SET_KEY_LEN];
+      argv[1] = createStringObject(data+LEVELDB_KEY_FLAG_SET_KEY,len);
+      argv[2] = createStringObject(data+LEVELDB_KEY_FLAG_SET_KEY+len+1,dataLen-LEVELDB_KEY_FLAG_SET_KEY-len-1);
+    }else if(tmptype == 'z'){
       argc = 4;
       argv = zmalloc(sizeof(robj*)*argc);
       fakeClient->argc = argc;
       fakeClient->argv = argv;
       argv[0] = createStringObject("zadd",4);
-      len = data[2];
-      argv[1] = createStringObject(data+3,len);
-      argv[3] = createStringObject(data+4+len,dataLen-4-len);
+      len = data[LEVELDB_KEY_FLAG_SET_KEY_LEN];
+      argv[1] = createStringObject(data+LEVELDB_KEY_FLAG_SET_KEY,len);
+      argv[3] = createStringObject(data+LEVELDB_KEY_FLAG_SET_KEY+len+1,dataLen-LEVELDB_KEY_FLAG_SET_KEY-len-1);
       value = (char*) leveldb_iter_value(iterator, &valueLen);
       argv[2] = createStringObject(value, valueLen);
     }else{
-      redisLog(REDIS_WARNING,"load leveldb no found type: %d %d", dbid, data[1]);
+      redisLog(REDIS_WARNING,"load leveldb no found type: %d %d", dbid, tmptype);
       freeFakeClientArgv(fakeClient);
       success = 0;
       break;
@@ -87,9 +95,6 @@ int loadleveldb(char *path) {
 
     /* The fake client should not have a reply */
     redisAssert(fakeClient->bufpos == 0 && listLength(fakeClient->reply) == 0);
-    /* The fake client should never get blocked */
-    redisAssert((fakeClient->flags & REDIS_BLOCKED) == 0);
-
     /* Clean up. Command code may have changed argv/argc so we use the
      * argv/argc of the client instead of the local variables. */
     freeFakeClientArgv(fakeClient);
@@ -147,13 +152,13 @@ void closeleveldb(struct leveldb *ldb) {
 }
 
 sds createleveldbHashHead(int dbid, sds name) {
-  char tmp[3];
+  char tmp[LEVELDB_KEY_FLAG_SET_KEY];
 
-  tmp[0] = dbid;
-  tmp[1] = 'h';
-  tmp[2] = sdslen(name);
+  tmp[LEVELDB_KEY_FLAG_DATABASE_ID] = dbid;
+  tmp[LEVELDB_KEY_FLAG_TYPE] = 'h';
+  tmp[LEVELDB_KEY_FLAG_SET_KEY_LEN] = sdslen(name);
 
-  sds key = sdsnewlen(tmp, 3);
+  sds key = sdsnewlen(tmp, LEVELDB_KEY_FLAG_SET_KEY);
 
   key = sdscatsds(key, name);
   key = sdscat(key, "=");
@@ -282,9 +287,10 @@ void leveldbHclear(int dbid, struct leveldb *ldb, robj *argv) {
 
   for(leveldb_iter_seek(iterator, key, klen); leveldb_iter_valid(iterator); leveldb_iter_next(iterator)) {
     data = (char*) leveldb_iter_key(iterator, &dataLen);
-    size_t len = data[1];
+    size_t len = data[LEVELDB_KEY_FLAG_SET_KEY_LEN];
     if(len != keyLen) break;
-    cmp = memcmp(r1->ptr, data + 2, len);
+    if(data[LEVELDB_KEY_FLAG_DATABASE_ID] != dbid) break;
+    cmp = memcmp(r1->ptr, data + LEVELDB_KEY_FLAG_SET_KEY, len);
     if(cmp != 0) break;
     leveldb_delete(ldb->db, ldb->woptions, data, dataLen, &err);
     if (err != NULL) {
@@ -307,13 +313,13 @@ void leveldbHclear(int dbid, struct leveldb *ldb, robj *argv) {
 }
 
 sds createleveldbSetHead(int dbid, sds name) {
-  char tmp[3];
+  char tmp[LEVELDB_KEY_FLAG_SET_KEY];
 
-  tmp[0] = dbid;
-  tmp[1] = 's';
-  tmp[2] = sdslen(name);
+  tmp[LEVELDB_KEY_FLAG_DATABASE_ID] = dbid;
+  tmp[LEVELDB_KEY_FLAG_TYPE] = 's';
+  tmp[LEVELDB_KEY_FLAG_SET_KEY_LEN] = sdslen(name);
 
-  sds key = sdsnewlen(tmp, 3);
+  sds key = sdsnewlen(tmp, LEVELDB_KEY_FLAG_SET_KEY);
 
   key = sdscatsds(key, name);
   key = sdscat(key, "=");
@@ -411,9 +417,10 @@ void leveldbSclear(int dbid, struct leveldb *ldb, robj* argv) {
 
   for(leveldb_iter_seek(iterator, key, klen); leveldb_iter_valid(iterator); leveldb_iter_next(iterator)) {
     data = (char*) leveldb_iter_key(iterator, &dataLen);
-    size_t len = data[1];
+    size_t len = data[LEVELDB_KEY_FLAG_SET_KEY_LEN];
     if(len != keyLen) break;
-    cmp = memcmp(r1->ptr, data + 2, len);
+    if(data[LEVELDB_KEY_FLAG_DATABASE_ID] != dbid) break;
+    cmp = memcmp(r1->ptr, data + LEVELDB_KEY_FLAG_SET_KEY, len);
     if(cmp != 0) break;
     leveldb_delete(ldb->db, ldb->woptions, data, dataLen, &err);
     if (err != NULL) {
@@ -436,13 +443,13 @@ void leveldbSclear(int dbid, struct leveldb *ldb, robj* argv) {
 }
 
 sds createleveldbSortedSetHead(int dbid, sds name) {
-  char tmp[3];
+  char tmp[LEVELDB_KEY_FLAG_SET_KEY];
 
-  tmp[0] = dbid;
-  tmp[1] = 'z';
-  tmp[2] = sdslen(name);
+  tmp[LEVELDB_KEY_FLAG_DATABASE_ID] = dbid;
+  tmp[LEVELDB_KEY_FLAG_TYPE] = 'z';
+  tmp[LEVELDB_KEY_FLAG_SET_KEY_LEN] = sdslen(name);
 
-  sds key = sdsnewlen(tmp, 3);
+  sds key = sdsnewlen(tmp, LEVELDB_KEY_FLAG_SET_KEY);
 
   key = sdscatsds(key, name);
   key = sdscat(key, "=");
@@ -642,9 +649,10 @@ void leveldbZclear(int dbid, struct leveldb *ldb, robj* argv) {
   leveldb_iterator_t *iterator = leveldb_create_iterator(ldb->db, ldb->roptions);
   for(leveldb_iter_seek(iterator, key, klen); leveldb_iter_valid(iterator); leveldb_iter_next(iterator)) {
     data = (char*) leveldb_iter_key(iterator, &dataLen);
-    size_t len = data[1];
+    size_t len = data[LEVELDB_KEY_FLAG_SET_KEY_LEN];
     if(len != keyLen) break;
-    cmp = memcmp(r1->ptr, data + 2, len);
+    if(data[LEVELDB_KEY_FLAG_DATABASE_ID] != dbid) break;
+    cmp = memcmp(r1->ptr, data + LEVELDB_KEY_FLAG_SET_KEY, len);
     if(cmp != 0) break;
     leveldb_delete(ldb->db, ldb->woptions, data, dataLen, &err);
     if (err != NULL) {
