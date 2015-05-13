@@ -1451,10 +1451,9 @@ void pfdebugCommand(redisClient *c);
 void latencyCommand(redisClient *c);
 void backupCommand(redisClient *c);
 
-void initleveldb(struct leveldb* ldb, char *path);
 int loadleveldb(char *path);
 void closeleveldb(struct leveldb *ldb);
-void *leveldbBackup(void *arg);
+void backupleveldb(void *arg);
 
 void leveldbHset(int dbid, struct leveldb *ldb, robj** argv);
 void leveldbHsetDirect(int dbid, struct leveldb *ldb, robj *argv1, robj *argv2, robj *argv3);

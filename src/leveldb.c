@@ -6,6 +6,30 @@
 #define LEVELDB_KEY_FLAG_SET_KEY_LEN 2
 #define LEVELDB_KEY_FLAG_SET_KEY 3
 
+void initleveldb(struct leveldb* ldb, char *path) {
+  ldb->options = leveldb_options_create();
+  leveldb_options_set_create_if_missing(ldb->options, 1);
+  leveldb_options_set_compression(ldb->options, 1);
+  leveldb_options_set_write_buffer_size(ldb->options, 64 * 1024 * 1024);
+  leveldb_options_set_max_open_files(ldb->options, 500);
+
+  char *err = NULL;
+  ldb->db = leveldb_open(ldb->options, path, &err);
+
+  if (err != NULL) {
+    redisLog(REDIS_WARNING, "open leveldb err: %s", err);
+    leveldb_free(err); 
+    err = NULL;
+    exit(1);
+  }
+
+  ldb->roptions = leveldb_readoptions_create();
+  leveldb_readoptions_set_fill_cache(ldb->roptions, 0);
+
+  ldb->woptions = leveldb_writeoptions_create();
+  leveldb_writeoptions_set_sync(ldb->woptions, 0);
+}
+
 int loadleveldb(char *path) {
   redisLog(REDIS_NOTICE, "load leveldb path: %s", path);
 
@@ -117,30 +141,6 @@ int loadleveldb(char *path) {
     return REDIS_OK;
   }
   return REDIS_ERR;
-}
-
-void initleveldb(struct leveldb* ldb, char *path) {
-  ldb->options = leveldb_options_create();
-  leveldb_options_set_create_if_missing(ldb->options, 1);
-  leveldb_options_set_compression(ldb->options, 1);
-  leveldb_options_set_write_buffer_size(ldb->options, 64 * 1024 * 1024);
-  leveldb_options_set_max_open_files(ldb->options, 500);
-
-  char *err = NULL;
-  ldb->db = leveldb_open(ldb->options, path, &err);
-
-  if (err != NULL) {
-    redisLog(REDIS_WARNING, "open leveldb err: %s", err);
-    leveldb_free(err); 
-    err = NULL;
-    exit(1);
-  }
-
-  ldb->roptions = leveldb_readoptions_create();
-  leveldb_readoptions_set_fill_cache(ldb->roptions, 0);
-
-  ldb->woptions = leveldb_writeoptions_create();
-  leveldb_writeoptions_set_sync(ldb->woptions, 0);
 }
 
 void closeleveldb(struct leveldb *ldb) {
@@ -728,7 +728,7 @@ void leveldbFlushall(struct leveldb* ldb) {
   leveldb_iter_destroy(iterator);
 }
 
-void *leveldbBackup(void *arg) {
+void backupleveldb(void *arg) {
   char *path = (char *)arg;
   time_t backup_start = time(NULL);
   leveldb_options_t *options = leveldb_options_create();
@@ -824,7 +824,6 @@ cleanup:
     }
   }
   zfree(path);
-  return (void *)NULL;
 }
 
 void backupCommand(redisClient *c) {
