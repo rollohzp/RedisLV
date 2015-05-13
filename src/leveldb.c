@@ -1,6 +1,5 @@
 #include "redis.h"
-
-#include <pthread.h>
+#include "bio.h"
 
 #define LEVELDB_KEY_FLAG_DATABASE_ID 0
 #define LEVELDB_KEY_FLAG_TYPE 1 
@@ -833,15 +832,11 @@ void backupCommand(redisClient *c) {
     addReplyError(c,"leveldb off");
     return;
   }
+
   size_t len = sdslen(c->argv[1]->ptr);
   char *path = zmalloc(len + 1);
-  pthread_t tid;
-
   memcpy(path, c->argv[1]->ptr, len);
   path[len] = '\0';
-  int err = pthread_create(&tid, NULL, &leveldbBackup, path);
-  if(err != 0){ 
-    redisLog(REDIS_WARNING, "backup leveldb thread err: %d", err);
-  }
+  bioCreateBackgroundJob(REDIS_BIO_LEVELDB_BACKUP,(void*)path,NULL,NULL);
   addReplyStatus(c,"backup leveldb started");
 }

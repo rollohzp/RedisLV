@@ -172,7 +172,9 @@ void *bioProcessBackgroundJobs(void *arg) {
         pthread_mutex_unlock(&bio_mutex[type]);
 
         /* Process the job accordingly to its type. */
-        if (type == REDIS_BIO_CLOSE_FILE) {
+        if (type == REDIS_BIO_LEVELDB_BACKUP) {
+            leveldbBackup(job->arg1);
+        } else if (type == REDIS_BIO_CLOSE_FILE) {
             close((long)job->arg1);
         } else if (type == REDIS_BIO_AOF_FSYNC) {
             aof_fsync((long)job->arg1);
