@@ -1,4 +1,4 @@
-[RedisRT-支持基于LevelDB的数据磁盘存储方式](https://github.com/ivanabc/RedisRT)
+[RedisLV-支持基于LevelDB的数据磁盘存储方式](https://github.com/ivanabc/RedisLV)
 ========================================
 
 ###Why
