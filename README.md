@@ -6,12 +6,32 @@
 1. save方式保存数据耗内存
 2. Aof方式保存数据恢复慢
 
-### RedisLV支持操作状况(yes: 支持; no: 不支持)
+### Redis命令支持状况(yes: 支持; no: 不支持)
 ---
 
 | Key         |     |
 |-------------|-----|
 | DEL         | yes |
+| DUMP        | yes |
+| EXISTS      | yes |
+| EXPIRE      | no  |
+| EXPIREAT    | no  |
+| KEYS        | yes |
+| MIGRATE     | no  |
+| MOVE        | no  |
+| OBJECT      | yes |
+| PERSIST     | no  |
+| PEXPIRE     | no  |
+| PEXPIREAT   | no  |
+| PTTL        | no  |
+| RANDOMKEY   | yes |
+| RENAME      | no  |
+| RENAMENX    | no  |
+| RESTORE     | no  |
+| SORT        | yes |
+| TTL         | no  |
+| TYPE        | yes |
+| SCAN        | yes |
 
 | Hash        |     |
 |-------------|-----|
