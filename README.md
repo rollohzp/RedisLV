@@ -13,7 +13,7 @@
 |-------------|-----|
 | DEL         | yes |
 
-####  Hash
+| Hash        |     |
 |-------------|-----|
 | HDEL        | yes | 
 | HEXISTS     | yes |
@@ -30,7 +30,7 @@
 | HVALS       | yes |
 | HSCAN       | yes |
 
-####  Set
+| Set         |     |
 |-------------|-----|
 | SADD        | yes |
 | SCARD       | yes |
@@ -48,7 +48,7 @@
 | SUNIONSTORE | no  |
 | SSCAN       | yes |
 
-####  SortedSet
+| SortedSet       |     |
 |-----------------|-----|
 | ZADD            | yes |
 | ZCARD           | yes |
