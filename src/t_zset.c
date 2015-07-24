@@ -1239,19 +1239,14 @@ void zaddGenericCommand(redisClient *c, int incr) {
     /* Lookup the key and create the sorted set if does not exist. */
     zobj = lookupKeyWrite(c->db,key);
     if (zobj == NULL) {
-        if(iskeyfreezed(c->db->id, key) == 1) {
-            addReply(c,shared.keyfreezederr);
-            goto cleanup;
+        if (server.zset_max_ziplist_entries == 0 ||
+            server.zset_max_ziplist_value < sdslen(c->argv[3]->ptr))
+        {
+            zobj = createZsetObject();
         } else {
-            if (server.zset_max_ziplist_entries == 0 ||
-                server.zset_max_ziplist_value < sdslen(c->argv[3]->ptr))
-            {
-                zobj = createZsetObject();
-            } else {
-                zobj = createZsetZiplistObject();
-            }
-            dbAdd(c->db,key,zobj);
+            zobj = createZsetZiplistObject();
         }
+        dbAdd(c->db,key,zobj);
     } else {
         if (zobj->type != REDIS_ZSET) {
             addReply(c,shared.wrongtypeerr);
@@ -1916,11 +1911,6 @@ void zunionInterGenericCommand(redisClient *c, robj *dstkey, int op) {
     /* test if the expected number of keys would overflow */
     if (setnum > c->argc-3) {
         addReply(c,shared.syntaxerr);
-        return;
-    }
-    
-    if (iskeyfreezed(c->db->id, dstkey) == 1) {
-        addReply(c,shared.keyfreezederr);
         return;
     }
 

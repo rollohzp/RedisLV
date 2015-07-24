@@ -213,7 +213,6 @@ long long emptyDb(void(callback)(void*)) {
         removed += dictSize(server.db[j].dict);
         dictEmpty(server.db[j].dict,callback);
         dictEmpty(server.db[j].expires,callback);
-        dictEmpty(server.db[j].freezed,NULL);
     }
     return removed;
 }
@@ -251,7 +250,6 @@ void flushdbCommand(redisClient *c) {
     signalFlushedDb(c->db->id);
     dictEmpty(c->db->dict,NULL);
     dictEmpty(c->db->expires,NULL);
-    dictEmpty(c->db->freezed,NULL);
     addReply(c,shared.ok);
     leveldbFlushdb(c->db->id, &server.ldb);
 }
