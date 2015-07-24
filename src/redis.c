@@ -275,6 +275,9 @@ struct redisCommand redisCommandTable[] = {
     {"pfmerge",pfmergeCommand,-2,"wm",0,NULL,1,-1,1,0,0},
     {"pfdebug",pfdebugCommand,-3,"w",0,NULL,0,0,0,0,0},
     {"latency",latencyCommand,-2,"arslt",0,NULL,0,0,0,0,0},
+    {"freeze",freezeCommand,-2,"w",0,NULL,1,-1,1,0,0},
+    {"melt",meltCommand,-2,"w",0,NULL,1,-1,1,0,0},
+    {"freezed",freezedCommand,2,"rS",0,NULL,0,0,0,0,0},
     {"backup",backupCommand,2,"ar",0,NULL,0,0,0,0,0}
 };
 
@@ -1268,6 +1271,8 @@ void createSharedObjects(void) {
     shared.space = createObject(REDIS_STRING,sdsnew(" "));
     shared.colon = createObject(REDIS_STRING,sdsnew(":"));
     shared.plus = createObject(REDIS_STRING,sdsnew("+"));
+    shared.keyfreezederr = createObject(REDIS_STRING,sdsnew(
+        "-WKEYFREEZED Operation on a freezed key, pleasse melt it first.\r\n"));
 
     for (j = 0; j < REDIS_SHARED_SELECT_CMDS; j++) {
         char dictid_str[64];
@@ -1709,6 +1714,7 @@ void initServer(void) {
         server.db[j].watched_keys = dictCreate(&keylistDictType,NULL);
         server.db[j].id = j;
         server.db[j].avg_ttl = 0;
+        server.db[j].freezed = dictCreate(&dbDictType,NULL);
     }
     server.pubsub_channels = dictCreate(&keylistDictType,NULL);
     server.pubsub_patterns = listCreate();
