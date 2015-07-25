@@ -944,6 +944,7 @@ typedef struct {
 
 extern struct redisServer server;
 extern struct sharedObjectsStruct shared;
+extern dictType freezedDictType;
 extern dictType setDictType;
 extern dictType zsetDictType;
 extern dictType dbDictType;

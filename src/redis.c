@@ -505,6 +505,16 @@ unsigned int dictEncObjHash(const void *key) {
     }
 }
 
+/* Freezed key hash table */
+dictType freezedDictType = {
+    dictSdsHash,                /* hash function */
+    NULL,                       /* key dup */
+    NULL,                       /* val dup */
+    dictSdsKeyCompare,          /* key compare */
+    dictSdsDestructor,          /* key destructor */
+    NULL                        /* val destructor */
+};
+
 /* Sets type hash table */
 dictType setDictType = {
     dictEncObjHash,            /* hash function */
@@ -1714,7 +1724,7 @@ void initServer(void) {
         server.db[j].watched_keys = dictCreate(&keylistDictType,NULL);
         server.db[j].id = j;
         server.db[j].avg_ttl = 0;
-        server.db[j].freezed = dictCreate(&dbDictType,NULL);
+        server.db[j].freezed = dictCreate(&freezedDictType,NULL);
     }
     server.pubsub_channels = dictCreate(&keylistDictType,NULL);
     server.pubsub_patterns = listCreate();
