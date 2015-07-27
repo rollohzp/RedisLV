@@ -399,7 +399,7 @@ robj *hashTypeCurrentObject(hashTypeIterator *hi, int what) {
 robj *hashTypeLookupWriteOrCreate(redisClient *c, robj *key) {
     robj *o = lookupKeyWrite(c->db,key);
     if (o == NULL) {
-        if(iskeyfreezed(c->db->id, key) == 1) {
+        if(isKeyFreezed(c->db->id, key) == 1) {
             addReply(c,shared.keyfreezederr);
             return NULL;
         } else {

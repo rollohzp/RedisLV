@@ -253,7 +253,7 @@ void saddCommand(redisClient *c) {
 
     set = lookupKeyWrite(c->db,c->argv[1]);
     if (set == NULL) {
-        if(iskeyfreezed(c->db->id, c->argv[1]) == 1) {
+        if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
             addReply(c,shared.keyfreezederr);
             return;
         } else {
@@ -330,13 +330,6 @@ void smoveCommand(redisClient *c) {
         return;
     }
     
-    if(!dstset) {
-        if(iskeyfreezed(c->db->id,c->argv[2]) == 1) {
-            addReply(c,shared.keyfreezederr);
-            return;
-        }
-    }
-
     /* If the element cannot be removed from the src set, return 0. */
     if (!setTypeRemove(srcset,ele)) {
         addReply(c,shared.czero);

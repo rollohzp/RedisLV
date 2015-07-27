@@ -1239,7 +1239,7 @@ void zaddGenericCommand(redisClient *c, int incr) {
     /* Lookup the key and create the sorted set if does not exist. */
     zobj = lookupKeyWrite(c->db,key);
     if (zobj == NULL) {
-        if(iskeyfreezed(c->db->id, key) == 1) {
+        if(isKeyFreezed(c->db->id, key) == 1) {
             addReply(c,shared.keyfreezederr);
             goto cleanup;
         } else {
@@ -1919,11 +1919,6 @@ void zunionInterGenericCommand(redisClient *c, robj *dstkey, int op) {
         return;
     }
     
-    if (iskeyfreezed(c->db->id, dstkey) == 1) {
-        addReply(c,shared.keyfreezederr);
-        return;
-    }
-
     /* read keys to be used for input */
     src = zcalloc(sizeof(zsetopsrc) * setnum);
     for (i = 0, j = 3; i < setnum; i++, j++) {

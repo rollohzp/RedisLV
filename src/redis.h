@@ -607,6 +607,7 @@ struct leveldb {
   leveldb_options_t *options;
   leveldb_readoptions_t *roptions;
   leveldb_writeoptions_t *woptions;
+  struct redisClient *fakeClient;
 };
 
 /*-----------------------------------------------------------------------------
@@ -1459,10 +1460,7 @@ void freezedCommand(redisClient *c);
 int loadleveldb(char *path);
 void closeleveldb(struct leveldb *ldb);
 void backupleveldb(void *arg);
-int loadfreezedkey(struct leveldb* ldb);
-int iskeyfreezed(int dbid, robj *key);
-int freezekey(int dbid, struct leveldb *ldb, robj *key, char keytype);
-int meltkey(int dbid, struct leveldb *ldb, robj *key, char keytype);
+int isKeyFreezed(int dbid, robj *key);
 
 void leveldbHset(int dbid, struct leveldb *ldb, robj** argv);
 void leveldbHsetDirect(int dbid, struct leveldb *ldb, robj *argv1, robj *argv2, robj *argv3);

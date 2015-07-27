@@ -625,6 +625,8 @@ void tryResizeHashTables(int dbid) {
         dictResize(server.db[dbid].dict);
     if (htNeedsResize(server.db[dbid].expires))
         dictResize(server.db[dbid].expires);
+    if (htNeedsResize(server.db[dbid].freezed))
+        dictResize(server.db[dbid].freezed);
 }
 
 /* Our hash table implementation performs rehashing incrementally while
@@ -643,6 +645,11 @@ int incrementallyRehash(int dbid) {
     /* Expires */
     if (dictIsRehashing(server.db[dbid].expires)) {
         dictRehashMilliseconds(server.db[dbid].expires,1);
+        return 1; /* already used our millisecond for this loop... */
+    }
+    /* Freezed */
+    if (dictIsRehashing(server.db[dbid].freezed)) {
+        dictRehashMilliseconds(server.db[dbid].freezed,1);
         return 1; /* already used our millisecond for this loop... */
     }
     return 0;
@@ -2896,6 +2903,14 @@ sds genRedisInfoString(char *section) {
       info = sdscatprintf(info, "# leveldb\r\n");
       if(server.leveldb_state != REDIS_LEVELDB_OFF) {
         info = sdscatprintf(info, "leveldb op num=%lld\r\n", server.leveldb_op_num);
+        for (j = 0; j < server.dbnum; j++) {
+            long long keys;
+
+            keys = dictSize(server.db[j].freezed);
+            if (keys) {
+                info = sdscatprintf(info, "db%d:freezed=%lld\r\n", j, keys);
+            }
+        }
         char *ss = leveldb_property_value(server.ldb.db, "leveldb.stats");
         info = sdscat(info,ss);
         leveldb_free(ss);
