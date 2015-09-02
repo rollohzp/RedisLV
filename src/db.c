@@ -296,6 +296,9 @@ void delCommand(redisClient *c) {
               //leveldbHclear(c->db->id,&server.ldb, c->argv[j]);
               leveldbDelHash(c->db->id, &server.ldb, c->argv[j], o);
               break;
+            case REDIS_STRING:
+              leveldbDelString(c->db->id, &server.ldb, c->argv[j]);
+              break;
           }
         }
 

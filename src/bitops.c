@@ -204,6 +204,11 @@ void setbitCommand(redisClient *c) {
     int byte, bit;
     int byteval, bitval;
     long on;
+    
+    if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
+        addReply(c,shared.keyfreezederr);
+        return;
+    }
 
     if (getBitOffsetFromArgument(c,c->argv[2],&bitoffset) != REDIS_OK)
         return;
@@ -243,6 +248,7 @@ void setbitCommand(redisClient *c) {
     notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"setbit",c->argv[1],c->db->id);
     server.dirty++;
     addReply(c, bitval ? shared.cone : shared.czero);
+    leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], o);
 }
 
 /* GETBIT key offset */

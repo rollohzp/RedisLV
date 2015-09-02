@@ -84,7 +84,7 @@ int loadFreezedKey(struct leveldb* ldb) {
 
 int isKeyFreezed(int dbid, robj *key) {
     dictEntry *de = dictFind(server.db[dbid].freezed,key->ptr);
-		return de ? 1 : 0;
+	return de ? 1 : 0;
 }
 
 sds createleveldbFreezedKeyHead(int dbid, sds name) {
@@ -173,6 +173,16 @@ int callCommandForleveldb(struct redisClient *fakeClient, char *data, size_t dat
         len = data[LEVELDB_KEY_FLAG_SET_KEY_LEN];
         argv[1] = createStringObject(data+LEVELDB_KEY_FLAG_SET_KEY,len);
         argv[3] = createStringObject(data+LEVELDB_KEY_FLAG_SET_KEY+len+1,dataLen-LEVELDB_KEY_FLAG_SET_KEY-len-1);
+        value = (char*) leveldb_iter_value(iterator, &valueLen);
+        argv[2] = createStringObject(value, valueLen);
+    }else if(tmptype == 'c'){
+        argc = 3;
+        argv = zmalloc(sizeof(robj*)*argc);
+        fakeClient->argc = argc;
+        fakeClient->argv = argv;
+        argv[0] = createStringObject("set",3);
+        len = data[LEVELDB_KEY_FLAG_SET_KEY_LEN];
+        argv[1] = createStringObject(data+LEVELDB_KEY_FLAG_SET_KEY,len);
         value = (char*) leveldb_iter_value(iterator, &valueLen);
         argv[2] = createStringObject(value, valueLen);
     }else{
@@ -348,6 +358,67 @@ void closeleveldb(struct leveldb *ldb) {
   leveldb_options_destroy(ldb->options);
   leveldb_close(ldb->db);
   freeFakeClient(ldb->fakeClient);
+}
+
+sds createleveldbStringHead(int dbid, sds name) {
+  char tmp[LEVELDB_KEY_FLAG_SET_KEY];
+
+  tmp[LEVELDB_KEY_FLAG_DATABASE_ID] = dbid;
+  tmp[LEVELDB_KEY_FLAG_TYPE] = 'c';
+  tmp[LEVELDB_KEY_FLAG_SET_KEY_LEN] = sdslen(name);
+
+  sds key = sdsnewlen(tmp, LEVELDB_KEY_FLAG_SET_KEY);
+
+  key = sdscatsds(key, name);
+  return key;
+}
+
+void leveldbSet(int dbid, struct leveldb *ldb, robj** argv) {
+  leveldbSetDirect(dbid, ldb, argv[1], argv[2]);
+}
+
+void leveldbSetDirect(int dbid, struct leveldb *ldb, robj *argv1, robj *argv2) {
+  if(server.leveldb_state == REDIS_LEVELDB_OFF) {
+    return;
+  }
+
+  robj *r1 = getDecodedObject(argv1);
+  robj *r2 = getDecodedObject(argv2);
+  sds key = createleveldbStringHead(dbid, r1->ptr);
+  char *err = NULL;
+
+  leveldb_put(ldb->db, ldb->woptions, key, sdslen(key), r2->ptr, sdslen(r2->ptr), &err);
+  if (err != NULL) {
+    redisLog(REDIS_WARNING, "set direct leveldb err: %s", err);
+    leveldb_free(err); 
+    err = NULL;
+  }
+  server.leveldb_op_num++;
+
+  sdsfree(key);
+  decrRefCount(r1);
+  decrRefCount(r2);
+}
+
+void leveldbDelString(int dbid, struct leveldb *ldb, robj* argv) {
+  if(server.leveldb_state == REDIS_LEVELDB_OFF) {
+    return;
+  }
+  
+  robj *r1 = getDecodedObject(argv);
+  sds sdskey = createleveldbStringHead(dbid, r1->ptr);
+  char *err = NULL;
+
+  leveldb_delete(ldb->db, ldb->woptions, sdskey, sdslen(sdskey), &err);
+  if (err != NULL) {
+    redisLog(REDIS_WARNING, "leveldbDel leveldb err: %s", err);
+    leveldb_free(err);
+    err = NULL;
+  }
+  server.leveldb_op_num++;
+  
+  sdsfree(sdskey);
+  decrRefCount(r1);
 }
 
 sds createleveldbHashHead(int dbid, sds name) {
@@ -1068,8 +1139,13 @@ void freezeCommand(redisClient *c) {
                     redisLog(REDIS_WARNING, "freezeCommand freeze hash key:%s failed", (char*)c->argv[j]->ptr);
                     continue;
                 }
+            } else if(o->type == REDIS_STRING) {
+                if(freezeKey(c->db, &server.ldb, c->argv[j], 'c') == REDIS_ERR) {
+                    redisLog(REDIS_WARNING, "freezeCommand freeze string key:%s failed", (char*)c->argv[j]->ptr);
+                    continue;
+                }
             } else {
-                redisLog(REDIS_WARNING, "freezeCommand keytype not set or zset or hash");
+                redisLog(REDIS_WARNING, "freezeCommand keytype not set or zset or hash or string");
                 continue;
             }
             signalModifiedKey(c->db,c->argv[j]);
