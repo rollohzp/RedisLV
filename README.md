@@ -98,3 +98,9 @@
 | ZLEXCOUNT       | yes |
 | ZREMRANGEBYLEX  | yes |  
 
+### RedisLV备份命令
+```
+redis-cli backup dir(备份文件目录)
+```
+* 当目录中包含BACKUP.log文件并且文件中有SUCCESS字段，表示备份成功
+
