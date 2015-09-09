@@ -65,6 +65,11 @@ static int checkStringLength(redisClient *c, long long size) {
 void setGenericCommand(redisClient *c, int flags, robj *key, robj *val, robj *expire, int unit, robj *ok_reply, robj *abort_reply) {
     long long milliseconds = 0; /* initialized to avoid any harmness warning */
 
+    if(isKeyFreezed(c->db->id, key) == 1) {
+        addReply(c,shared.keyfreezederr);
+        return;
+    }
+    
     if (expire) {
         if (getLongLongFromObjectOrReply(c, expire, &milliseconds, NULL) != REDIS_OK)
             return;
@@ -88,6 +93,7 @@ void setGenericCommand(redisClient *c, int flags, robj *key, robj *val, robj *ex
     if (expire) notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC,
         "expire",key,c->db->id);
     addReply(c, ok_reply ? ok_reply : shared.ok);
+    leveldbSetDirect(c->db->id, &server.ldb, key, val);
 }
 
 /* SET key value [NX] [XX] [EX <seconds>] [PX <milliseconds>] */
@@ -96,6 +102,9 @@ void setCommand(redisClient *c) {
     robj *expire = NULL;
     int unit = UNIT_SECONDS;
     int flags = REDIS_SET_NO_FLAGS;
+    
+    robj *o = lookupKeyWrite(c->db,c->argv[1]);
+    if(o != NULL && checkType(c,o,REDIS_STRING)) return;
 
     for (j = 3; j < c->argc; j++) {
         char *a = c->argv[j]->ptr;
@@ -133,11 +142,17 @@ void setnxCommand(redisClient *c) {
 }
 
 void setexCommand(redisClient *c) {
+    robj *o = lookupKeyWrite(c->db,c->argv[1]);
+    if(o != NULL && checkType(c,o,REDIS_STRING)) return;
+    
     c->argv[3] = tryObjectEncoding(c->argv[3]);
     setGenericCommand(c,REDIS_SET_NO_FLAGS,c->argv[1],c->argv[3],c->argv[2],UNIT_SECONDS,NULL,NULL);
 }
 
 void psetexCommand(redisClient *c) {
+    robj *o = lookupKeyWrite(c->db,c->argv[1]);
+    if(o != NULL && checkType(c,o,REDIS_STRING)) return;
+    
     c->argv[3] = tryObjectEncoding(c->argv[3]);
     setGenericCommand(c,REDIS_SET_NO_FLAGS,c->argv[1],c->argv[3],c->argv[2],UNIT_MILLISECONDS,NULL,NULL);
 }
@@ -162,9 +177,16 @@ void getCommand(redisClient *c) {
 }
 
 void getsetCommand(redisClient *c) {
+    if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
+        addReply(c,shared.keyfreezederr);
+        return;
+    }
+    
     if (getGenericCommand(c) == REDIS_ERR) return;
+    
     c->argv[2] = tryObjectEncoding(c->argv[2]);
     setKey(c->db,c->argv[1],c->argv[2]);
+    leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], c->argv[2]);
     notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"set",c->argv[1],c->db->id);
     server.dirty++;
 }
@@ -179,6 +201,11 @@ void setrangeCommand(redisClient *c) {
 
     if (offset < 0) {
         addReplyError(c,"offset is out of range");
+        return;
+    }
+    
+    if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
+        addReply(c,shared.keyfreezederr);
         return;
     }
 
@@ -225,6 +252,7 @@ void setrangeCommand(redisClient *c) {
         notifyKeyspaceEvent(REDIS_NOTIFY_STRING,
             "setrange",c->argv[1],c->db->id);
         server.dirty++;
+        leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], o);
     }
     addReplyLongLong(c,sdslen(o->ptr));
 }
@@ -286,6 +314,7 @@ void mgetCommand(redisClient *c) {
 
 void msetGenericCommand(redisClient *c, int nx) {
     int j, busykeys = 0;
+    robj *o;
 
     if ((c->argc % 2) == 0) {
         addReplyError(c,"wrong number of arguments for MSET");
@@ -295,8 +324,23 @@ void msetGenericCommand(redisClient *c, int nx) {
      * set nothing at all if at least one already key exists. */
     if (nx) {
         for (j = 1; j < c->argc; j += 2) {
-            if (lookupKeyWrite(c->db,c->argv[j]) != NULL) {
+            if (lookupKeyWrite(c->db,c->argv[j]) != NULL || isKeyFreezed(c->db->id, c->argv[j]) == 1) {
                 busykeys++;
+            }
+        }
+        if (busykeys) {
+            addReply(c, shared.czero);
+            return;
+        }
+    } else {
+        for (j = 1; j < c->argc; j += 2) {
+            if(isKeyFreezed(c->db->id, c->argv[j]) == 1) {
+                busykeys++;
+            } else {
+                o = lookupKeyWrite(c->db,c->argv[j]);
+                if(o != NULL && o->type != REDIS_STRING) {
+                    busykeys++;
+                }
             }
         }
         if (busykeys) {
@@ -308,6 +352,7 @@ void msetGenericCommand(redisClient *c, int nx) {
     for (j = 1; j < c->argc; j += 2) {
         c->argv[j+1] = tryObjectEncoding(c->argv[j+1]);
         setKey(c->db,c->argv[j],c->argv[j+1]);
+        leveldbSetDirect(c->db->id, &server.ldb, c->argv[j], c->argv[j+1]);
         notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"set",c->argv[j],c->db->id);
     }
     server.dirty += (c->argc-1)/2;
@@ -325,6 +370,11 @@ void msetnxCommand(redisClient *c) {
 void incrDecrCommand(redisClient *c, long long incr) {
     long long value, oldvalue;
     robj *o, *new;
+    
+    if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
+        addReply(c,shared.keyfreezederr);
+        return;
+    }
 
     o = lookupKeyWrite(c->db,c->argv[1]);
     if (o != NULL && checkType(c,o,REDIS_STRING)) return;
@@ -348,6 +398,7 @@ void incrDecrCommand(redisClient *c, long long incr) {
     addReply(c,shared.colon);
     addReply(c,new);
     addReply(c,shared.crlf);
+    leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], new);
 }
 
 void incrCommand(redisClient *c) {
@@ -375,6 +426,11 @@ void decrbyCommand(redisClient *c) {
 void incrbyfloatCommand(redisClient *c) {
     long double incr, value;
     robj *o, *new, *aux;
+    
+    if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
+        addReply(c,shared.keyfreezederr);
+        return;
+    }
 
     o = lookupKeyWrite(c->db,c->argv[1]);
     if (o != NULL && checkType(c,o,REDIS_STRING)) return;
@@ -396,6 +452,7 @@ void incrbyfloatCommand(redisClient *c) {
     notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"incrbyfloat",c->argv[1],c->db->id);
     server.dirty++;
     addReplyBulk(c,new);
+    leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], new);
 
     /* Always replicate INCRBYFLOAT as a SET command with the final value
      * in order to make sure that differences in float precision or formatting
@@ -409,6 +466,11 @@ void incrbyfloatCommand(redisClient *c) {
 void appendCommand(redisClient *c) {
     size_t totlen;
     robj *o, *append;
+    
+    if(isKeyFreezed(c->db->id, c->argv[1]) == 1) {
+        addReply(c,shared.keyfreezederr);
+        return;
+    }
 
     o = lookupKeyWrite(c->db,c->argv[1]);
     if (o == NULL) {
@@ -417,6 +479,7 @@ void appendCommand(redisClient *c) {
         dbAdd(c->db,c->argv[1],c->argv[2]);
         incrRefCount(c->argv[2]);
         totlen = stringObjectLen(c->argv[2]);
+        leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], c->argv[2]);
     } else {
         /* Key exists, check type */
         if (checkType(c,o,REDIS_STRING))
@@ -432,6 +495,7 @@ void appendCommand(redisClient *c) {
         o = dbUnshareStringValue(c->db,c->argv[1],o);
         o->ptr = sdscatlen(o->ptr,append->ptr,sdslen(append->ptr));
         totlen = sdslen(o->ptr);
+        leveldbSetDirect(c->db->id, &server.ldb, c->argv[1], o);
     }
     signalModifiedKey(c->db,c->argv[1]);
     notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"append",c->argv[1],c->db->id);

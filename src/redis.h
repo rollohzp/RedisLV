@@ -1482,6 +1482,9 @@ void leveldbFlushall(struct leveldb* ldb);
 void leveldbDelHash(int dbid, struct leveldb *ldb, robj* objkey, robj *objval);
 void leveldbDelSet(int dbid, struct leveldb *ldb, robj* objkey, robj *objval);
 void leveldbDelZset(int dbid, struct leveldb *ldb, robj* objkey, robj *objval);
+void leveldbSet(int dbid, struct leveldb *ldb, robj** argv);
+void leveldbSetDirect(int dbid, struct leveldb *ldb, robj *argv1, robj *argv2);
+void leveldbDelString(int dbid, struct leveldb *ldb, robj* argv);
 
 #if defined(__GNUC__)
 void *calloc(size_t count, size_t size) __attribute__ ((deprecated));
