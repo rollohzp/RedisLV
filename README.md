@@ -13,6 +13,12 @@
 ### RedisLV缺点
 1. redis更改数据操作同时更改leveldb, 导致损耗部分性能
 
+### RedisLV备份
+```
+redis-cli backup dir(备份文件目录)
+```
+* 当目录中包含BACKUP.log文件并且文件中有SUCCESS字段，表示备份成功
+
 ### Redis命令支持状况(yes: 支持; no: 不支持)
 ---
 
@@ -39,6 +45,31 @@
 | TTL         | no  |
 | TYPE        | yes |
 | SCAN        | yes |
+
+| String      |     |
+|-------------|-----|
+| APPEND      | yes | 
+| BITCOUNT    | yes |
+| BITOP       | yes |
+| DECR        | yes |
+| DECRBY      | yes |
+| GET					| yes |
+| GETBIT      | yes |
+| GETRANGE    | yes |
+| GETSET      | yes |
+| INCR        | yes |
+| INCRBY      | yes |
+| INCRBYFLOAT | yes |
+| MGET        | yes |
+| MSET        | yes |
+| MSETNX      | yes |
+| PSETEX      | no  |
+| SET         | yes |
+| SETBIT      | yes |
+| SETEX       | no  |
+| SETNX       | yes |
+| SETRANGE    | yes |
+| STRLEN      | yes |
 
 | Hash        |     |
 |-------------|-----|
@@ -97,10 +128,3 @@
 | ZRANGEBYLEX     | yes |
 | ZLEXCOUNT       | yes |
 | ZREMRANGEBYLEX  | yes |  
-
-### RedisLV备份命令
-```
-redis-cli backup dir(备份文件目录)
-```
-* 当目录中包含BACKUP.log文件并且文件中有SUCCESS字段，表示备份成功
-

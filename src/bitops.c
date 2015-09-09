@@ -442,9 +442,11 @@ void bitopCommand(redisClient *c) {
     if (maxlen) {
         o = createObject(REDIS_STRING,res);
         setKey(c->db,targetkey,o);
+        leveldbSetDirect(c->db->id, &server.ldb, targetkey, o);
         notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"set",targetkey,c->db->id);
         decrRefCount(o);
     } else if (dbDelete(c->db,targetkey)) {
+        leveldbDelString(c->db->id, &server.ldb, targetkey);
         signalModifiedKey(c->db,targetkey);
         notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC,"del",targetkey,c->db->id);
     }
