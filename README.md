@@ -17,7 +17,7 @@
 ```
 redis-cli backup dir(备份文件目录)
 ```
-* 当目录中包含BACKUP.log文件并且文件中有SUCCESS字段，表示备份成功
+* 当备份目录中包含BACKUP.log文件并且文件中有SUCCESS字段，表示备份成功
 
 ### Redis命令支持状况(yes: 支持; no: 不支持)
 ---
