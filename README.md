@@ -1,7 +1,7 @@
 [RedisLV-支持基于LevelDB的数据磁盘存储方式](https://github.com/ivanabc/RedisLV)
 ---
 
-### why
+### Why
 ---
 1. save方式保存数据耗内存
 2. aof方式保存数据恢复慢
