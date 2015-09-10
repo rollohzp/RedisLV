@@ -320,9 +320,9 @@ void bitopCommand(redisClient *c) {
     src = zmalloc(sizeof(unsigned char*) * numkeys);
     len = zmalloc(sizeof(long) * numkeys);
     objects = zmalloc(sizeof(robj*) * numkeys);
-				for (j = 0; j < numkeys; j++) {
-								if(isKeyFreezed(c->db->id, c->argv[j+3]) == 1) {
-												addReply(c,shared.keyfreezederr);
+    for (j = 0; j < numkeys; j++) {
+        if(isKeyFreezed(c->db->id, c->argv[j+3]) == 1) {
+            addReply(c,shared.keyfreezederr);
             unsigned long i;
             for (i = 0; i < j; i++) {
                 if (objects[i])
@@ -331,8 +331,8 @@ void bitopCommand(redisClient *c) {
             zfree(src);
             zfree(len);
             zfree(objects);
-												return;
-								}
+            return;
+        }
 
         o = lookupKeyRead(c->db,c->argv[j+3]);
         /* Handle non-existing keys as empty strings. */
