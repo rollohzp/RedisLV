@@ -1,17 +1,17 @@
-[RedisLV-支持基于LevelDB的数据磁盘存储方式](https://github.com/ivanabc/RedisLV)
+[RedisLV-支持基于LevelDB的Redis持久化方法](https://github.com/ivanabc/RedisLV)
 ---
 
-### Why
+### Redis持久化的问题
 ---
-1. save方式保存数据耗内存
-2. aof方式保存数据恢复慢
+1. RDB方式: 数据持久化的过程中可能存在大量额外内存消耗。
+2. AOF方式: 通过aof文件恢复数据库的过程慢。
 
 ### RedisLV优点
-1. 数据落地不会带来额外的内存消耗
-2. 服务启动快
+1. 对于内存有限的服务，数据持久化不会带来额外的内存消耗。
+2. 相对AOF方式，数据库的恢复更快。
 
 ### RedisLV缺点
-1. redis更改数据操作同时更改leveldb, 导致损耗部分性能
+1. 由于对redis写入操作需要同步到leveldb，导致性能损耗(读操作不受影响)。
 
 ### RedisLV备份
 ```
