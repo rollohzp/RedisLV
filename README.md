@@ -1,17 +1,23 @@
-[RedisLV-支持基于LevelDB的数据磁盘存储方式](https://github.com/ivanabc/RedisLV)
+[RedisLV-支持基于LevelDB的Redis持久化方法](https://github.com/ivanabc/RedisLV)
 ---
 
-### why
+### Redis持久化的问题
 ---
-1. save方式保存数据耗内存
-2. aof方式保存数据恢复慢
+1. RDB方式: 数据持久化的过程中可能存在大量额外内存消耗。
+2. AOF方式: 通过aof文件恢复数据库的过程慢。
 
 ### RedisLV优点
-1. 数据落地不会带来额外的内存消耗
-2. 服务启动快
+1. 对于内存有限的服务，数据持久化不会带来额外的内存消耗。
+2. 相对AOF方式，数据库的恢复更快。
 
 ### RedisLV缺点
-1. redis更改数据操作同时更改leveldb, 导致损耗部分性能
+1. 由于对redis写入操作需要同步到leveldb，导致性能损耗(读操作不受影响)。
+
+### RedisLV备份
+```
+redis-cli backup dir(备份文件目录)
+```
+* 当备份目录中包含BACKUP.log文件并且文件中有SUCCESS字段，表示备份成功
 
 ### Redis命令支持状况(yes: 支持; no: 不支持)
 ---
@@ -39,6 +45,31 @@
 | TTL         | no  |
 | TYPE        | yes |
 | SCAN        | yes |
+
+| String      |     |
+|-------------|-----|
+| APPEND      | yes | 
+| BITCOUNT    | yes |
+| BITOP       | yes |
+| DECR        | yes |
+| DECRBY      | yes |
+| GET					| yes |
+| GETBIT      | yes |
+| GETRANGE    | yes |
+| GETSET      | yes |
+| INCR        | yes |
+| INCRBY      | yes |
+| INCRBYFLOAT | yes |
+| MGET        | yes |
+| MSET        | yes |
+| MSETNX      | yes |
+| PSETEX      | no  |
+| SET         | yes |
+| SETBIT      | yes |
+| SETEX       | no  |
+| SETNX       | yes |
+| SETRANGE    | yes |
+| STRLEN      | yes |
 
 | Hash        |     |
 |-------------|-----|
@@ -97,10 +128,3 @@
 | ZRANGEBYLEX     | yes |
 | ZLEXCOUNT       | yes |
 | ZREMRANGEBYLEX  | yes |  
-
-### RedisLV备份命令
-```
-redis-cli backup dir(备份文件目录)
-```
-* 当目录中包含BACKUP.log文件并且文件中有SUCCESS字段，表示备份成功
-

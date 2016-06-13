@@ -290,6 +290,11 @@ void bitopCommand(redisClient *c) {
     unsigned long minlen = 0;    /* Min len among the input keys. */
     unsigned char *res = NULL; /* Resulting string. */
 
+    if(isKeyFreezed(c->db->id, c->argv[2]) == 1) {
+        addReply(c,shared.keyfreezederr);
+        return;
+    }
+
     /* Parse the operation name. */
     if ((opname[0] == 'a' || opname[0] == 'A') && !strcasecmp(opname,"and"))
         op = BITOP_AND;
@@ -316,6 +321,19 @@ void bitopCommand(redisClient *c) {
     len = zmalloc(sizeof(long) * numkeys);
     objects = zmalloc(sizeof(robj*) * numkeys);
     for (j = 0; j < numkeys; j++) {
+        if(isKeyFreezed(c->db->id, c->argv[j+3]) == 1) {
+            addReply(c,shared.keyfreezederr);
+            unsigned long i;
+            for (i = 0; i < j; i++) {
+                if (objects[i])
+                    decrRefCount(objects[i]);
+            }
+            zfree(src);
+            zfree(len);
+            zfree(objects);
+            return;
+        }
+
         o = lookupKeyRead(c->db,c->argv[j+3]);
         /* Handle non-existing keys as empty strings. */
         if (o == NULL) {
@@ -442,9 +460,11 @@ void bitopCommand(redisClient *c) {
     if (maxlen) {
         o = createObject(REDIS_STRING,res);
         setKey(c->db,targetkey,o);
+        leveldbSetDirect(c->db->id, &server.ldb, targetkey, o);
         notifyKeyspaceEvent(REDIS_NOTIFY_STRING,"set",targetkey,c->db->id);
         decrRefCount(o);
     } else if (dbDelete(c->db,targetkey)) {
+        leveldbDelString(c->db->id, &server.ldb, targetkey);
         signalModifiedKey(c->db,targetkey);
         notifyKeyspaceEvent(REDIS_NOTIFY_GENERIC,"del",targetkey,c->db->id);
     }
